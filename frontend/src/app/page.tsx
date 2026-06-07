@@ -56,6 +56,44 @@ interface APIKeyInfo {
 // to point at your deployed backend (e.g. https://fitvoice-backend.onrender.com).
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+// ─── Local-storage API key persistence ─────────────────────────────────────
+// Render's free tier uses an EPHEMERAL filesystem — the SQLite DB (and any
+// keys saved through the in-app "API Keys" manager) gets wiped on every
+// redeploy / restart. To survive that, we mirror saved keys into the
+// browser's localStorage and silently re-sync them back to the backend on
+// load whenever it reports a provider as "not set". This means once you've
+// entered a key from a given browser, future redeploys won't make you
+// re-enter it — the frontend re-saves it automatically.
+const LOCAL_KEYS_STORAGE_KEY = "fitvoice_api_keys";
+
+const loadLocalKeys = (): Record<string, string> => {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LOCAL_KEYS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+};
+
+const saveLocalKey = (provider: string, apiKey: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    const all = loadLocalKeys();
+    all[provider] = apiKey;
+    window.localStorage.setItem(LOCAL_KEYS_STORAGE_KEY, JSON.stringify(all));
+  } catch { /* localStorage unavailable (e.g. private browsing) — ignore */ }
+};
+
+const removeLocalKey = (provider: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    const all = loadLocalKeys();
+    delete all[provider];
+    window.localStorage.setItem(LOCAL_KEYS_STORAGE_KEY, JSON.stringify(all));
+  } catch { /* ignore */ }
+};
+
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "from-orange-500 to-amber-500",
   openai:    "from-emerald-500 to-teal-500",
@@ -185,10 +223,36 @@ export default function Dashboard() {
     } catch { /* silent */ }
   };
 
+  // Re-sync any locally-cached keys the backend has lost (e.g. after a Render
+  // redeploy reset its ephemeral DB). Compares localStorage against what the
+  // backend currently reports as "set", and silently re-POSTs anything missing.
+  const restoreKeysFromLocalStorage = async () => {
+    const cached = loadLocalKeys();
+    const providers = Object.keys(cached);
+    if (providers.length === 0) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/keys`);
+      if (!res.ok) return;
+      const current: APIKeyInfo[] = await res.json();
+      const missing = providers.filter((p) => {
+        const info = current.find((k) => k.provider === p);
+        return !info || !info.is_set;
+      });
+      for (const provider of missing) {
+        await fetch(`${API_BASE}/api/keys`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, api_key: cached[provider] }),
+        });
+      }
+      if (missing.length > 0) await fetchApiKeys();
+    } catch { /* best-effort restore — fail silently */ }
+  };
+
   useEffect(() => {
     fetchDashboardData();
     fetchBrandPrefs();
-    fetchApiKeys();
+    fetchApiKeys().then(() => restoreKeysFromLocalStorage());
     fetchSttSettings();
   }, []);
 
@@ -403,6 +467,9 @@ export default function Dashboard() {
         body: JSON.stringify({ provider: selectedProvider, api_key: keyInput.trim() }),
       });
       if (!res.ok) throw new Error((await res.json()).detail || "Save failed");
+      // Mirror to localStorage so the key survives backend redeploys
+      // (Render's free tier wipes the DB on every restart).
+      saveLocalKey(selectedProvider, keyInput.trim());
       setKeyMsg({ type: "ok", text: "API key saved and hot-loaded — no restart needed!" });
       setKeyInput(""); setShowKeyInput(false);
       await fetchApiKeys();
@@ -416,6 +483,7 @@ export default function Dashboard() {
   const handleDeleteKey = async (provider: string) => {
     try {
       await fetch(`${API_BASE}/api/keys/${provider}`, { method: "DELETE" });
+      removeLocalKey(provider);
       await fetchApiKeys();
       if (selectedProvider === provider) { setKeyInput(""); setKeyMsg(null); }
     } catch { /* silent */ }
