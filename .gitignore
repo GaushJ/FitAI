@@ -1,0 +1,18 @@
+.env
+.env.*
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Audio temp
+temp_audio/
