@@ -117,6 +117,15 @@ export default function Dashboard() {
   const [keyMsg, setKeyMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [providerDropOpen, setProviderDropOpen] = useState(false);
 
+  // ── STT engine settings (dev-only toggle: cloud vs local Whisper)
+  const [sttSettings, setSttSettings] = useState<{
+    allow_local_choice: boolean;
+    current_mode: string;
+    is_production: boolean;
+    modes: Array<{ value: string; label: string; description: string }>;
+  } | null>(null);
+  const [sttSaving, setSttSaving] = useState(false);
+
   // ── Expanded meal cards
   const [expandedMeals, setExpandedMeals] = useState<Set<number>>(new Set());
 
@@ -164,10 +173,18 @@ export default function Dashboard() {
     } catch { /* silent */ }
   };
 
+  const fetchSttSettings = async () => {
+    try {
+      const res = await fetch("http://localhost:8000/api/stt-settings");
+      if (res.ok) setSttSettings(await res.json());
+    } catch { /* silent */ }
+  };
+
   useEffect(() => {
     fetchDashboardData();
     fetchBrandPrefs();
     fetchApiKeys();
+    fetchSttSettings();
   }, []);
 
   // ─── Timer ─────────────────────────────────────────────────────────────────
@@ -281,6 +298,27 @@ export default function Dashboard() {
       await fetchDashboardData();
     } catch (err: any) {
       setErrorMsg("Error saving profile.");
+    }
+  };
+
+  // ─── STT engine mode (dev-only) ────────────────────────────────────────────
+
+  const handleSttModeChange = async (mode: string) => {
+    if (!sttSettings || sttSettings.is_production) return;
+    setSttSaving(true);
+    try {
+      const res = await fetch("http://localhost:8000/api/stt-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) throw new Error("Failed to update STT mode");
+      await fetchSttSettings();
+      setSuccessMsg(`Speech-to-text engine switched to "${sttSettings.modes.find(m => m.value === mode)?.label}".`);
+    } catch {
+      setErrorMsg("Failed to update STT engine preference.");
+    } finally {
+      setSttSaving(false);
     }
   };
 
@@ -1108,6 +1146,43 @@ export default function Dashboard() {
                 <input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
               </div>
+
+              {/* STT Engine toggle — only shown in non-production / local dev environments */}
+              {sttSettings?.allow_local_choice && (
+                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-purple-400" /> Speech-to-Text Engine
+                    </label>
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Dev only</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Choose how voice recordings are transcribed on this machine. This option is hidden in production — deployed apps always use the cloud engine.
+                  </p>
+                  <div className="space-y-1.5">
+                    {sttSettings.modes.map((m) => (
+                      <label
+                        key={m.value}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${sttSettings.current_mode === m.value ? "bg-purple-950/30 border-purple-500/40" : "bg-slate-900/50 border-slate-800 hover:border-slate-700"}`}
+                      >
+                        <input
+                          type="radio"
+                          name="stt-mode"
+                          checked={sttSettings.current_mode === m.value}
+                          onChange={() => handleSttModeChange(m.value)}
+                          disabled={sttSaving}
+                          className="mt-0.5 accent-purple-600"
+                        />
+                        <div>
+                          <p className="text-[11px] font-semibold text-slate-200">{m.label}</p>
+                          <p className="text-[10px] text-slate-500 leading-snug">{m.description}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">Calories Goal (kcal)</label>
