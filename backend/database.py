@@ -38,6 +38,14 @@ class IngredientCache(Base):
     carbs_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
     fat_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
 
+class AppSetting(Base):
+    """Generic key-value store for small app-wide settings (e.g. preferred STT mode)."""
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    key: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    value: Mapped[str] = mapped_column(String, nullable=False)
+
 class APIKey(Base):
     __tablename__ = "api_keys"
 
@@ -133,6 +141,22 @@ async def update_user_streak(session: AsyncSession, user_id: int) -> int:
     user.last_active_date = today
     await session.commit()
     return user.current_streak
+
+async def get_app_setting(session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
+    result = await session.execute(select(AppSetting).where(AppSetting.key == key))
+    setting = result.scalar_one_or_none()
+    return setting.value if setting else default
+
+async def set_app_setting(session: AsyncSession, key: str, value: str) -> "AppSetting":
+    result = await session.execute(select(AppSetting).where(AppSetting.key == key))
+    setting = result.scalar_one_or_none()
+    if setting:
+        setting.value = value
+    else:
+        setting = AppSetting(key=key, value=value)
+        session.add(setting)
+    await session.commit()
+    return setting
 
 async def get_all_api_keys(session: AsyncSession) -> List["APIKey"]:
     result = await session.execute(select(APIKey))

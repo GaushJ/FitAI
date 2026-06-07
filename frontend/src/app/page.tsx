@@ -51,6 +51,11 @@ interface APIKeyInfo {
   masked_key: string;
 }
 
+// Backend API base URL — falls back to localhost for local development.
+// Set NEXT_PUBLIC_API_URL in your hosting provider's env vars (e.g. Vercel)
+// to point at your deployed backend (e.g. https://fitvoice-backend.onrender.com).
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "from-orange-500 to-amber-500",
   openai:    "from-emerald-500 to-teal-500",
@@ -117,6 +122,15 @@ export default function Dashboard() {
   const [keyMsg, setKeyMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [providerDropOpen, setProviderDropOpen] = useState(false);
 
+  // ── STT engine settings (dev-only toggle: cloud vs local Whisper)
+  const [sttSettings, setSttSettings] = useState<{
+    allow_local_choice: boolean;
+    current_mode: string;
+    is_production: boolean;
+    modes: Array<{ value: string; label: string; description: string }>;
+  } | null>(null);
+  const [sttSaving, setSttSaving] = useState(false);
+
   // ── Expanded meal cards
   const [expandedMeals, setExpandedMeals] = useState<Set<number>>(new Set());
 
@@ -130,7 +144,7 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/dashboard");
+      const res = await fetch(`${API_BASE}/api/dashboard`);
       if (!res.ok) throw new Error("Backend connection failed");
       const data = await res.json();
       setProfile(data.user);
@@ -144,7 +158,7 @@ export default function Dashboard() {
       setErrorMsg("");
     } catch (err) {
       console.error(err);
-      setErrorMsg("Unable to connect to local FastAPI server (http://localhost:8000). Please start the backend service.");
+      setErrorMsg(`Unable to connect to the FastAPI backend (${API_BASE}). Please ensure it is running and reachable.`);
     } finally {
       setLoading(false);
     }
@@ -152,15 +166,22 @@ export default function Dashboard() {
 
   const fetchBrandPrefs = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences");
+      const res = await fetch(`${API_BASE}/api/brand-preferences`);
       if (res.ok) setBrandPrefs(await res.json());
     } catch { /* silent */ }
   };
 
   const fetchApiKeys = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/keys");
+      const res = await fetch(`${API_BASE}/api/keys`);
       if (res.ok) setApiKeys(await res.json());
+    } catch { /* silent */ }
+  };
+
+  const fetchSttSettings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/stt-settings`);
+      if (res.ok) setSttSettings(await res.json());
     } catch { /* silent */ }
   };
 
@@ -168,6 +189,7 @@ export default function Dashboard() {
     fetchDashboardData();
     fetchBrandPrefs();
     fetchApiKeys();
+    fetchSttSettings();
   }, []);
 
   // ─── Timer ─────────────────────────────────────────────────────────────────
@@ -219,7 +241,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("file", blob, "recording.webm");
     try {
-      const res = await fetch("http://localhost:8000/api/transcribe", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Transcription failed");
       const data = await res.json();
       setTextQuery(data.transcript);
@@ -240,7 +262,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("text", textQuery.trim());
     try {
-      const res = await fetch("http://localhost:8000/api/track-meal", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/track-meal`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Macro parsing failed");
       const result = await res.json();
       setSuccessMsg(`Meal logged! ${Math.round(result.macros?.calories ?? 0)} kcal tracked.`);
@@ -264,7 +286,7 @@ export default function Dashboard() {
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:8000/api/user", {
+      const res = await fetch(`${API_BASE}/api/user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -284,6 +306,27 @@ export default function Dashboard() {
     }
   };
 
+  // ─── STT engine mode (dev-only) ────────────────────────────────────────────
+
+  const handleSttModeChange = async (mode: string) => {
+    if (!sttSettings || sttSettings.is_production) return;
+    setSttSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/stt-settings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!res.ok) throw new Error("Failed to update STT mode");
+      await fetchSttSettings();
+      setSuccessMsg(`Speech-to-text engine switched to "${sttSettings.modes.find(m => m.value === mode)?.label}".`);
+    } catch {
+      setErrorMsg("Failed to update STT engine preference.");
+    } finally {
+      setSttSaving(false);
+    }
+  };
+
   // ─── Brand preferences ─────────────────────────────────────────────────────
 
   const handleSaveBrandByName = async (e: React.FormEvent) => {
@@ -291,7 +334,7 @@ export default function Dashboard() {
     if (!prefIngredient.trim() || !prefBrand.trim()) return;
     setBrandSaving(true); setBrandMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences", {
+      const res = await fetch(`${API_BASE}/api/brand-preferences`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ingredient_name: prefIngredient.trim(), preferred_brand: prefBrand.trim() }),
@@ -316,7 +359,7 @@ export default function Dashboard() {
     fd.append("preferred_brand", prefBrand.trim());
     fd.append("image", labelFile);
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences/label", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/brand-preferences/label`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Extraction failed");
       const data = await res.json();
       setExtractedMacros(data.macros);
@@ -332,7 +375,7 @@ export default function Dashboard() {
 
   const handleDeletePref = async (name: string) => {
     try {
-      await fetch(`http://localhost:8000/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
       await fetchBrandPrefs();
     } catch { /* silent */ }
   };
@@ -354,7 +397,7 @@ export default function Dashboard() {
     if (!selectedProvider || !keyInput.trim()) return;
     setKeySaving(true); setKeyMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/keys", {
+      const res = await fetch(`${API_BASE}/api/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: selectedProvider, api_key: keyInput.trim() }),
@@ -372,7 +415,7 @@ export default function Dashboard() {
 
   const handleDeleteKey = async (provider: string) => {
     try {
-      await fetch(`http://localhost:8000/api/keys/${provider}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/keys/${provider}`, { method: "DELETE" });
       await fetchApiKeys();
       if (selectedProvider === provider) { setKeyInput(""); setKeyMsg(null); }
     } catch { /* silent */ }
@@ -1108,6 +1151,43 @@ export default function Dashboard() {
                 <input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
               </div>
+
+              {/* STT Engine toggle — only shown in non-production / local dev environments */}
+              {sttSettings?.allow_local_choice && (
+                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                      <Mic className="w-3.5 h-3.5 text-purple-400" /> Speech-to-Text Engine
+                    </label>
+                    <span className="text-[9px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Dev only</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-relaxed">
+                    Choose how voice recordings are transcribed on this machine. This option is hidden in production — deployed apps always use the cloud engine.
+                  </p>
+                  <div className="space-y-1.5">
+                    {sttSettings.modes.map((m) => (
+                      <label
+                        key={m.value}
+                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${sttSettings.current_mode === m.value ? "bg-purple-950/30 border-purple-500/40" : "bg-slate-900/50 border-slate-800 hover:border-slate-700"}`}
+                      >
+                        <input
+                          type="radio"
+                          name="stt-mode"
+                          checked={sttSettings.current_mode === m.value}
+                          onChange={() => handleSttModeChange(m.value)}
+                          disabled={sttSaving}
+                          className="mt-0.5 accent-purple-600"
+                        />
+                        <div>
+                          <p className="text-[11px] font-semibold text-slate-200">{m.label}</p>
+                          <p className="text-[10px] text-slate-500 leading-snug">{m.description}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 mb-1.5">Calories Goal (kcal)</label>

@@ -18,7 +18,16 @@ load_dotenv()
 from database import (init_db, get_db, User, DailyFoodLog, BrandPreference, IngredientCache,
                        APIKey, update_user_streak, get_brand_preferences,
                        set_brand_preference, delete_brand_preference,
-                       get_all_api_keys, save_api_key, delete_api_key)
+                       get_all_api_keys, save_api_key, delete_api_key,
+                       get_app_setting, set_app_setting)
+
+# ── Environment detection ────────────────────────────────────────────────────
+# Set ENVIRONMENT=production in your hosting provider's env vars (Render, Fly.io,
+# Railway, etc). When in production, the "choose local vs cloud STT" option is
+# hidden from the UI — production deployments should always rely on a cloud STT
+# provider (e.g. Groq) since most free/low hosting tiers can't fit a multi-GB
+# Whisper model in memory.
+IS_PRODUCTION = os.environ.get("ENVIRONMENT", "development").strip().lower() == "production"
 from sqlalchemy import select as sql_select
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +54,15 @@ async def lifespan(app: FastAPI):
         for k in keys:
             if k.provider in SUPPORTED_PROVIDERS:
                 os.environ[SUPPORTED_PROVIDERS[k.provider]["env_key"]] = k.api_key
+
+        # Load preferred STT mode ("auto" | "cloud" | "local") into os.environ.
+        # In production this is always forced to "cloud" regardless of the saved
+        # setting, since free/low-tier hosts can't run a local Whisper model.
+        if IS_PRODUCTION:
+            os.environ["STT_MODE"] = "cloud"
+        else:
+            saved_mode = await get_app_setting(session, "stt_mode", default="auto")
+            os.environ["STT_MODE"] = saved_mode
     yield
     if os.path.exists("temp_audio"):
         shutil.rmtree("temp_audio")
@@ -463,6 +481,44 @@ async def remove_api_key(provider: str, db: AsyncSession = Depends(get_db)):
     # Remove from running process env too
     os.environ.pop(SUPPORTED_PROVIDERS[provider]["env_key"], None)
     return {"status": "deleted", "provider": provider}
+
+# ----------------- STT MODE SETTINGS (dev-only toggle) -----------------
+
+class STTModeSchema(BaseModel):
+    mode: str  # "auto" | "cloud" | "local"
+
+VALID_STT_MODES = {"auto", "cloud", "local"}
+
+@app.get("/api/stt-settings")
+async def get_stt_settings(db: AsyncSession = Depends(get_db)):
+    """
+    Returns whether the user is allowed to choose between cloud/local STT,
+    and the currently active mode. The choice is only exposed in non-production
+    environments — production deployments are pinned to "cloud" automatically.
+    """
+    current_mode = os.environ.get("STT_MODE", "auto")
+    return {
+        "allow_local_choice": not IS_PRODUCTION,
+        "current_mode": current_mode,
+        "is_production": IS_PRODUCTION,
+        "modes": [
+            {"value": "auto",  "label": "Auto (Cloud, fallback to Local)", "description": "Uses Groq's hosted Whisper if a key is set, otherwise falls back to your local model."},
+            {"value": "cloud", "label": "Cloud Only (Groq API)",            "description": "Always uses Groq's hosted Whisper API. Fastest, needs a free Groq API key."},
+            {"value": "local", "label": "Local Only (On-device Whisper)",   "description": "Always uses faster-whisper running on your own machine. No API key or internet needed, but requires more RAM/CPU."},
+        ],
+    }
+
+@app.post("/api/stt-settings")
+async def update_stt_settings(payload: STTModeSchema, db: AsyncSession = Depends(get_db)):
+    """Update the preferred STT mode. Disabled in production deployments."""
+    if IS_PRODUCTION:
+        raise HTTPException(status_code=403, detail="STT mode is locked to 'cloud' in production deployments.")
+    if payload.mode not in VALID_STT_MODES:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of {sorted(VALID_STT_MODES)}")
+
+    await set_app_setting(db, "stt_mode", payload.mode)
+    os.environ["STT_MODE"] = payload.mode  # hot-reload, no restart needed
+    return {"status": "saved", "mode": payload.mode}
 
 if __name__ == "__main__":
     import uvicorn
