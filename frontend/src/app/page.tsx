@@ -51,6 +51,11 @@ interface APIKeyInfo {
   masked_key: string;
 }
 
+// Backend API base URL — falls back to localhost for local development.
+// Set NEXT_PUBLIC_API_URL in your hosting provider's env vars (e.g. Vercel)
+// to point at your deployed backend (e.g. https://fitvoice-backend.onrender.com).
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "from-orange-500 to-amber-500",
   openai:    "from-emerald-500 to-teal-500",
@@ -139,7 +144,7 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/dashboard");
+      const res = await fetch(`${API_BASE}/api/dashboard`);
       if (!res.ok) throw new Error("Backend connection failed");
       const data = await res.json();
       setProfile(data.user);
@@ -153,7 +158,7 @@ export default function Dashboard() {
       setErrorMsg("");
     } catch (err) {
       console.error(err);
-      setErrorMsg("Unable to connect to local FastAPI server (http://localhost:8000). Please start the backend service.");
+      setErrorMsg(`Unable to connect to the FastAPI backend (${API_BASE}). Please ensure it is running and reachable.`);
     } finally {
       setLoading(false);
     }
@@ -161,21 +166,21 @@ export default function Dashboard() {
 
   const fetchBrandPrefs = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences");
+      const res = await fetch(`${API_BASE}/api/brand-preferences`);
       if (res.ok) setBrandPrefs(await res.json());
     } catch { /* silent */ }
   };
 
   const fetchApiKeys = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/keys");
+      const res = await fetch(`${API_BASE}/api/keys`);
       if (res.ok) setApiKeys(await res.json());
     } catch { /* silent */ }
   };
 
   const fetchSttSettings = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/stt-settings");
+      const res = await fetch(`${API_BASE}/api/stt-settings`);
       if (res.ok) setSttSettings(await res.json());
     } catch { /* silent */ }
   };
@@ -236,7 +241,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("file", blob, "recording.webm");
     try {
-      const res = await fetch("http://localhost:8000/api/transcribe", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Transcription failed");
       const data = await res.json();
       setTextQuery(data.transcript);
@@ -257,7 +262,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("text", textQuery.trim());
     try {
-      const res = await fetch("http://localhost:8000/api/track-meal", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/track-meal`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Macro parsing failed");
       const result = await res.json();
       setSuccessMsg(`Meal logged! ${Math.round(result.macros?.calories ?? 0)} kcal tracked.`);
@@ -281,7 +286,7 @@ export default function Dashboard() {
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch("http://localhost:8000/api/user", {
+      const res = await fetch(`${API_BASE}/api/user`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -307,7 +312,7 @@ export default function Dashboard() {
     if (!sttSettings || sttSettings.is_production) return;
     setSttSaving(true);
     try {
-      const res = await fetch("http://localhost:8000/api/stt-settings", {
+      const res = await fetch(`${API_BASE}/api/stt-settings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
@@ -329,7 +334,7 @@ export default function Dashboard() {
     if (!prefIngredient.trim() || !prefBrand.trim()) return;
     setBrandSaving(true); setBrandMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences", {
+      const res = await fetch(`${API_BASE}/api/brand-preferences`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ingredient_name: prefIngredient.trim(), preferred_brand: prefBrand.trim() }),
@@ -354,7 +359,7 @@ export default function Dashboard() {
     fd.append("preferred_brand", prefBrand.trim());
     fd.append("image", labelFile);
     try {
-      const res = await fetch("http://localhost:8000/api/brand-preferences/label", { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/brand-preferences/label`, { method: "POST", body: fd });
       if (!res.ok) throw new Error((await res.json()).detail || "Extraction failed");
       const data = await res.json();
       setExtractedMacros(data.macros);
@@ -370,7 +375,7 @@ export default function Dashboard() {
 
   const handleDeletePref = async (name: string) => {
     try {
-      await fetch(`http://localhost:8000/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
       await fetchBrandPrefs();
     } catch { /* silent */ }
   };
@@ -392,7 +397,7 @@ export default function Dashboard() {
     if (!selectedProvider || !keyInput.trim()) return;
     setKeySaving(true); setKeyMsg(null);
     try {
-      const res = await fetch("http://localhost:8000/api/keys", {
+      const res = await fetch(`${API_BASE}/api/keys`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider: selectedProvider, api_key: keyInput.trim() }),
@@ -410,7 +415,7 @@ export default function Dashboard() {
 
   const handleDeleteKey = async (provider: string) => {
     try {
-      await fetch(`http://localhost:8000/api/keys/${provider}`, { method: "DELETE" });
+      await fetch(`${API_BASE}/api/keys/${provider}`, { method: "DELETE" });
       await fetchApiKeys();
       if (selectedProvider === provider) { setKeyInput(""); setKeyMsg(null); }
     } catch { /* silent */ }
