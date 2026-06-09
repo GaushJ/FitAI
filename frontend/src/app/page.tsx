@@ -173,7 +173,10 @@ export default function Dashboard() {
   // ── Brand preferences state
   const [brandPrefs, setBrandPrefs]       = useState<BrandPref[]>([]);
   const [showBrandModal, setShowBrandModal] = useState(false);
-  const [brandTab, setBrandTab]           = useState<"name" | "label">("name");
+  const [brandTab, setBrandTab]           = useState<"name" | "label" | "excel">("name");
+  const [xlsxImporting, setXlsxImporting] = useState(false);
+  const [xlsxMsg, setXlsxMsg]             = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const xlsxInputRef                      = useRef<HTMLInputElement>(null);
   const [prefIngredient, setPrefIngredient] = useState("");
   const [prefBrand, setPrefBrand]         = useState("");
   const [labelFile, setLabelFile]         = useState<File | null>(null);
@@ -505,6 +508,52 @@ export default function Dashboard() {
       setErrorMsg(err.message || "Failed to delete meal.");
     } finally {
       setDeletingMealId(null);
+    }
+  };
+
+  // ── Excel export (download) ────────────────────────────────────────────────
+  const handleExportExcel = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/brand-preferences/export`);
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      // Use the filename the server suggests, or fall back to a default
+      const cd   = res.headers.get("Content-Disposition") ?? "";
+      const match = cd.match(/filename="?([^"]+)"?/);
+      a.download = match?.[1] ?? "fitvoice_brand_preferences.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setXlsxMsg({ type: "err", text: "Failed to download Excel file." });
+    }
+  };
+
+  // ── Excel import (upload) ──────────────────────────────────────────────────
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be re-selected if needed
+    e.target.value = "";
+    setXlsxImporting(true); setXlsxMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch(`${API_BASE}/api/brand-preferences/import`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Import failed");
+      const warn = data.warnings?.length ? `  ⚠️ ${data.warnings.length} warning(s).` : "";
+      setXlsxMsg({ type: "ok", text: `${data.message}${warn}` });
+      await fetchBrandPrefs();
+    } catch (err: any) {
+      setXlsxMsg({ type: "err", text: err.message || "Failed to import Excel file." });
+    } finally {
+      setXlsxImporting(false);
     }
   };
 
@@ -1140,16 +1189,22 @@ export default function Dashboard() {
               {/* Tabs */}
               <div className="flex bg-slate-950 rounded-xl p-1 gap-1">
                 <button
-                  onClick={() => { setBrandTab("name"); setBrandMsg(null); setExtractedMacros(null); }}
+                  onClick={() => { setBrandTab("name"); setBrandMsg(null); setExtractedMacros(null); setXlsxMsg(null); }}
                   className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "name" ? "bg-purple-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                 >
-                  <Tag className="w-3.5 h-3.5" /> By Brand Name
+                  <Tag className="w-3.5 h-3.5" /> By Name
                 </button>
                 <button
-                  onClick={() => { setBrandTab("label"); setBrandMsg(null); setExtractedMacros(null); }}
+                  onClick={() => { setBrandTab("label"); setBrandMsg(null); setExtractedMacros(null); setXlsxMsg(null); }}
                   className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "label" ? "bg-purple-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
                 >
-                  <Upload className="w-3.5 h-3.5" /> Upload Label
+                  <Upload className="w-3.5 h-3.5" /> Label
+                </button>
+                <button
+                  onClick={() => { setBrandTab("excel"); setBrandMsg(null); setXlsxMsg(null); }}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "excel" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Excel
                 </button>
               </div>
 
@@ -1287,7 +1342,93 @@ export default function Dashboard() {
                 </div>
               )}
 
-              {brandPrefs.length === 0 && (
+              {/* ── Tab: Excel Import / Export ── */}
+              {brandTab === "excel" && (
+                <div className="space-y-5">
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Download your current brand preferences as a spreadsheet, edit it offline,
+                    then re-upload to restore or bulk-add preferences in one go.
+                  </p>
+
+                  {/* Hidden file input for import */}
+                  <input
+                    ref={xlsxInputRef}
+                    type="file"
+                    accept=".xlsx"
+                    className="hidden"
+                    onChange={handleImportExcel}
+                  />
+
+                  {/* Export card */}
+                  <div className="bg-slate-950/60 border border-emerald-900/40 rounded-2xl p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <span className="text-emerald-400">↓</span> Download Preferences
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Exports all {brandPrefs.length} saved brand{brandPrefs.length !== 1 ? "s" : ""} with their nutrition data
+                        as a styled .xlsx file.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleExportExcel}
+                      disabled={brandPrefs.length === 0}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition shadow"
+                    >
+                      <Plus className="w-3.5 h-3.5 rotate-45" /> Export .xlsx
+                    </button>
+                  </div>
+
+                  {/* Import card */}
+                  <div className="bg-slate-950/60 border border-purple-900/40 rounded-2xl p-4 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                        <span className="text-purple-400">↑</span> Upload &amp; Restore
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5">
+                        Upload a .xlsx file in the same format to bulk-set preferences
+                        and nutrition data in one step.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => xlsxInputRef.current?.click()}
+                      disabled={xlsxImporting}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs font-bold transition shadow"
+                    >
+                      {xlsxImporting
+                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
+                        : <><Upload className="w-3.5 h-3.5" /> Import .xlsx</>}
+                    </button>
+                  </div>
+
+                  {/* Format reminder */}
+                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected columns</p>
+                    <div className="grid grid-cols-6 gap-1 text-[9px] text-center">
+                      {["Ingredient", "Brand", "Calories/100g", "Protein/100g", "Carbs/100g", "Fat/100g"].map((h, i) => (
+                        <div key={h} className={`px-1 py-1 rounded font-mono font-bold ${i < 2 ? "bg-purple-950/60 text-purple-300 border border-purple-900/40" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>
+                          {h}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-slate-600 mt-2">
+                      Columns A–B are required. C–F are optional — fill them to also update the ingredient cache.
+                    </p>
+                  </div>
+
+                  {/* Feedback */}
+                  {xlsxMsg && (
+                    <div className={`rounded-xl p-3 flex items-start gap-2 text-xs ${xlsxMsg.type === "ok" ? "bg-emerald-950/30 border border-emerald-500/20 text-emerald-300" : "bg-red-950/30 border border-red-500/20 text-red-300"}`}>
+                      {xlsxMsg.type === "ok"
+                        ? <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
+                      {xlsxMsg.text}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {brandPrefs.length === 0 && brandTab !== "excel" && (
                 <p className="text-xs text-slate-600 text-center py-2">No brand preferences saved yet.</p>
               )}
             </div>

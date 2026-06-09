@@ -1,5 +1,6 @@
 import os
 import re
+import io
 import json
 import base64
 import shutil
@@ -9,6 +10,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -561,6 +563,204 @@ async def remove_brand_preference(ingredient_name: str, db: AsyncSession = Depen
     if not deleted:
         raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
     return {"status": "deleted", "ingredient_name": ingredient_name}
+
+@app.get("/api/brand-preferences/export")
+async def export_brand_preferences(db: AsyncSession = Depends(get_db)):
+    """
+    Export all brand preferences + their cached nutrition data as a styled .xlsx file.
+    The downloaded file can be re-uploaded via /api/brand-preferences/import to bulk-restore
+    preferences on a fresh deployment or share them with another device.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import (
+        Font, PatternFill, Alignment, Border, Side, GradientFill
+    )
+    from openpyxl.utils import get_column_letter
+
+    # ── Fetch all preferences + cache entries ────────────────────────────────
+    prefs  = await get_brand_preferences(db)
+    caches_res = await db.execute(select(IngredientCache))
+    caches = caches_res.scalars().all()
+
+    # Build lookup: (ingredient_name, brand) → cache row
+    cache_map: dict = {}
+    for c in caches:
+        key = (c.name.lower(), (c.brand or "").lower())
+        cache_map[key] = c
+
+    # ── Build workbook ───────────────────────────────────────────────────────
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Brand Preferences"
+
+    # ── Colour palette
+    HEADER_BG   = "4F46E5"   # indigo-600
+    HEADER_FG   = "FFFFFF"
+    ALT_ROW_BG  = "F1F0FF"   # very light indigo tint
+    BORDER_CLR  = "C7D2FE"   # indigo-200
+    NOTE_BG     = "EEF2FF"
+
+    thin = Side(style="thin", color=BORDER_CLR)
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # ── Instructions row ─────────────────────────────────────────────────────
+    ws.merge_cells("A1:F1")
+    ws["A1"] = (
+        "FitVoice — Brand Preferences Export  |  "
+        "Columns A–B are required for import. "
+        "Edit nutritional values (C–F) and re-upload to update the ingredient cache."
+    )
+    ws["A1"].font      = Font(name="Arial", size=9, italic=True, color="6366F1")
+    ws["A1"].fill      = PatternFill("solid", fgColor=NOTE_BG)
+    ws["A1"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 28
+
+    # ── Column headers ────────────────────────────────────────────────────────
+    headers = [
+        ("Ingredient",       "A", 22),
+        ("Brand",            "B", 22),
+        ("Calories / 100g",  "C", 17),
+        ("Protein / 100g",   "D", 17),
+        ("Carbs / 100g",     "E", 17),
+        ("Fat / 100g",       "F", 17),
+    ]
+
+    for col_idx, (label, col_letter, width) in enumerate(headers, start=1):
+        cell = ws.cell(row=2, column=col_idx, value=label)
+        cell.font      = Font(name="Arial", size=10, bold=True, color=HEADER_FG)
+        cell.fill      = PatternFill("solid", fgColor=HEADER_BG)
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border    = border
+        ws.column_dimensions[col_letter].width = width
+
+    ws.row_dimensions[2].height = 22
+
+    # ── Data rows ─────────────────────────────────────────────────────────────
+    for row_idx, pref in enumerate(prefs, start=3):
+        name_lower  = pref.ingredient_name.lower()
+        brand_lower = pref.preferred_brand.lower()
+        cache_entry = cache_map.get((name_lower, brand_lower)) or cache_map.get((name_lower, ""))
+
+        row_fill = PatternFill("solid", fgColor=ALT_ROW_BG) if row_idx % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
+
+        data = [
+            pref.ingredient_name,
+            pref.preferred_brand,
+            round(cache_entry.calories_per_100g, 1) if cache_entry else "",
+            round(cache_entry.protein_per_100g,  1) if cache_entry else "",
+            round(cache_entry.carbs_per_100g,    1) if cache_entry else "",
+            round(cache_entry.fat_per_100g,      1) if cache_entry else "",
+        ]
+
+        for col_idx, value in enumerate(data, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font      = Font(name="Arial", size=10)
+            cell.fill      = row_fill
+            cell.alignment = Alignment(horizontal="center" if col_idx > 2 else "left", vertical="center")
+            cell.border    = border
+
+        ws.row_dimensions[row_idx].height = 18
+
+    # ── Freeze header rows + auto-filter ─────────────────────────────────────
+    ws.freeze_panes = "A3"
+    ws.auto_filter.ref = f"A2:F{max(2, 1 + len(prefs))}"
+
+    # ── Stream back as .xlsx ──────────────────────────────────────────────────
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"fitvoice_brand_preferences_{datetime.date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.post("/api/brand-preferences/import")
+async def import_brand_preferences(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Bulk-import brand preferences from an .xlsx file (same format as the export).
+    Each row must have at minimum: Ingredient (col A) and Brand (col B).
+    Nutritional columns C–F, if filled, update the ingredient cache as well.
+    Returns a summary of rows imported vs. skipped.
+    """
+    from openpyxl import load_workbook
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    try:
+        wb = load_workbook(filename=io.BytesIO(content), data_only=True)
+    except Exception:
+        raise HTTPException(status_code=422, detail="Could not parse file. Please upload a valid .xlsx file.")
+
+    ws = wb.active
+    imported = skipped = 0
+    errors: list[str] = []
+
+    for row in ws.iter_rows(min_row=3, values_only=True):  # row 1=note, row 2=header
+        # Skip fully empty rows
+        if not any(row):
+            continue
+
+        ingredient = str(row[0]).strip() if row[0] is not None else ""
+        brand      = str(row[1]).strip() if row[1] is not None else ""
+
+        if not ingredient or not brand:
+            skipped += 1
+            continue
+
+        name_lower  = ingredient.lower()
+        brand_lower = brand.lower()
+
+        # Save brand preference
+        await set_brand_preference(db, ingredient, brand)
+
+        # If nutritional columns are provided, upsert ingredient cache
+        try:
+            cal  = float(row[2]) if row[2] not in (None, "") else None
+            prot = float(row[3]) if row[3] not in (None, "") else None
+            carb = float(row[4]) if row[4] not in (None, "") else None
+            fat  = float(row[5]) if row[5] not in (None, "") else None
+
+            if all(v is not None for v in [cal, prot, carb, fat]):
+                existing = await db.execute(
+                    select(IngredientCache).where(
+                        IngredientCache.name  == name_lower,
+                        IngredientCache.brand == brand_lower,
+                    )
+                )
+                entry = existing.scalar_one_or_none()
+                if entry:
+                    entry.calories_per_100g = cal
+                    entry.protein_per_100g  = prot
+                    entry.carbs_per_100g    = carb
+                    entry.fat_per_100g      = fat
+                else:
+                    db.add(IngredientCache(
+                        name=name_lower, brand=brand_lower,
+                        calories_per_100g=cal, protein_per_100g=prot,
+                        carbs_per_100g=carb, fat_per_100g=fat,
+                    ))
+        except (ValueError, TypeError) as e:
+            errors.append(f"Row '{ingredient}/{brand}': invalid nutrition value — skipped cache update.")
+
+        imported += 1
+
+    await db.commit()
+    return {
+        "status": "success",
+        "imported": imported,
+        "skipped": skipped,
+        "warnings": errors,
+        "message": f"{imported} preference(s) imported{f', {skipped} skipped' if skipped else ''}.",
+    }
+
 
 @app.post("/api/brand-preferences/label")
 async def set_brand_from_label(
