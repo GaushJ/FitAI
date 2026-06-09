@@ -18,7 +18,16 @@ if _raw_url:
     # Supabase (and Heroku-style) give "postgres://..." — SQLAlchemy needs "postgresql+asyncpg://"
     DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1) \
                             .replace("postgresql://", "postgresql+asyncpg://", 1)
-    engine = create_async_engine(DATABASE_URL, echo=False, pool_size=5, max_overflow=10)
+    # Supabase requires SSL — pass it via connect_args so asyncpg enforces it.
+    # pool_pre_ping keeps the connection alive across Render's sleep/wake cycles.
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=False,
+        pool_size=5,
+        max_overflow=10,
+        pool_pre_ping=True,
+        connect_args={"ssl": "require"},
+    )
 else:
     DATABASE_URL = "sqlite+aiosqlite:///./meal_tracker.db"
     engine = create_async_engine(DATABASE_URL, echo=False)
