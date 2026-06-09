@@ -1,3 +1,4 @@
+import os
 import asyncio
 import datetime
 from typing import Optional, List
@@ -5,9 +6,23 @@ from sqlalchemy import String, Integer, Float, Date, JSON, ForeignKey, select, t
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-DATABASE_URL = "sqlite+aiosqlite:///./meal_tracker.db"
+# ── Database URL ──────────────────────────────────────────────────────────────
+# Production (Render): set DATABASE_URL in your Render environment variables
+# to the Supabase connection string (postgresql://postgres:...@db.xxx.supabase.co:5432/postgres).
+# The "postgres://" scheme from Supabase is rewritten to the asyncpg dialect automatically.
+#
+# Local development: falls back to a local SQLite file — no env var needed.
+_raw_url = os.environ.get("DATABASE_URL", "")
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+if _raw_url:
+    # Supabase (and Heroku-style) give "postgres://..." — SQLAlchemy needs "postgresql+asyncpg://"
+    DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1) \
+                            .replace("postgresql://", "postgresql+asyncpg://", 1)
+    engine = create_async_engine(DATABASE_URL, echo=False, pool_size=5, max_overflow=10)
+else:
+    DATABASE_URL = "sqlite+aiosqlite:///./meal_tracker.db"
+    engine = create_async_engine(DATABASE_URL, echo=False)
+
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 class Base(DeclarativeBase):
@@ -86,18 +101,18 @@ async def init_db():
         # Create all tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
 
-        # ── Schema migration: add auth columns to the users table if they were
-        # added after the DB was first created (SQLite's ALTER TABLE ADD COLUMN).
-        # SQLite raises an OperationalError if the column already exists, so we
-        # swallow that and move on — idempotent on repeated startups.
-        for col_ddl in [
-            "ALTER TABLE users ADD COLUMN username VARCHAR",
-            "ALTER TABLE users ADD COLUMN password_hash VARCHAR",
-        ]:
-            try:
-                await conn.execute(text(col_ddl))
-            except Exception:
-                pass  # column already exists — fine
+        # ── Schema migration: add auth columns to existing SQLite DBs ────────
+        # Only needed for SQLite (local dev). PostgreSQL / Supabase always gets
+        # a fresh schema from create_all above — no manual ALTER needed there.
+        if DATABASE_URL.startswith("sqlite"):
+            for col_ddl in [
+                "ALTER TABLE users ADD COLUMN username VARCHAR",
+                "ALTER TABLE users ADD COLUMN password_hash VARCHAR",
+            ]:
+                try:
+                    await conn.execute(text(col_ddl))
+                except Exception:
+                    pass  # column already exists — fine
 
     async with AsyncSessionLocal() as session:
         # Seed ingredient cache if empty
