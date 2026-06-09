@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import {
   Mic, Square, Flame, Dumbbell, Settings, Check, AlertCircle,
   Loader2, Utensils, Calendar, Apple, TrendingUp, Sparkles,
   Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
-  Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck
+  Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
+  LogOut, BarChart2,
 } from "lucide-react";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -94,6 +96,34 @@ const removeLocalKey = (provider: string) => {
   } catch { /* ignore */ }
 };
 
+// ─── Auth token helpers ───────────────────────────────────────────────────────
+// The JWT returned by /api/auth/login (or /signup) is stored here.
+// Every authenticated request must send it as "Authorization: Bearer <token>".
+const AUTH_TOKEN_KEY = "fitvoice_auth_token";
+const AUTH_USER_KEY  = "fitvoice_auth_user";
+
+const getStoredToken = () =>
+  typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
+
+const getStoredUser = (): { id: number; name: string; username: string } | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+
+const clearAuth = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_USER_KEY);
+};
+
+// Build the Authorization header for every authenticated fetch call.
+const authHeaders = (): Record<string, string> => ({
+  Authorization: `Bearer ${getStoredToken() ?? ""}`,
+});
+
 const PROVIDER_COLORS: Record<string, string> = {
   anthropic: "from-orange-500 to-amber-500",
   openai:    "from-emerald-500 to-teal-500",
@@ -113,6 +143,8 @@ const PROVIDER_BADGES: Record<string, string> = {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
+  const router = useRouter();
+
   // ── Core state
   const [profile, setProfile] = useState<UserProfile>({
     name: "Gaurav", current_streak: 0,
@@ -172,6 +204,9 @@ export default function Dashboard() {
   // ── Expanded meal cards
   const [expandedMeals, setExpandedMeals] = useState<Set<number>>(new Set());
 
+  // ── Meal deletion
+  const [deletingMealId, setDeletingMealId] = useState<number | null>(null);
+
   // ── Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
@@ -182,7 +217,8 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard`);
+      const res = await fetch(`${API_BASE}/api/dashboard`, { headers: authHeaders() });
+      if (res.status === 401) { handleLogout(); return; }
       if (!res.ok) throw new Error("Backend connection failed");
       const data = await res.json();
       setProfile(data.user);
@@ -249,7 +285,18 @@ export default function Dashboard() {
     } catch { /* best-effort restore — fail silently */ }
   };
 
+  // ── Logout helper ──────────────────────────────────────────────────────────
+  const handleLogout = () => {
+    clearAuth();
+    router.replace("/login");
+  };
+
   useEffect(() => {
+    // Redirect to login if no JWT is stored
+    if (!getStoredToken()) {
+      router.replace("/login");
+      return;
+    }
     fetchDashboardData();
     fetchBrandPrefs();
     fetchApiKeys().then(() => restoreKeysFromLocalStorage());
@@ -305,7 +352,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("file", blob, "recording.webm");
     try {
-      const res = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: fd, headers: authHeaders() });
       if (!res.ok) throw new Error((await res.json()).detail || "Transcription failed");
       const data = await res.json();
       setTextQuery(data.transcript);
@@ -326,7 +373,7 @@ export default function Dashboard() {
     const fd = new FormData();
     fd.append("text", textQuery.trim());
     try {
-      const res = await fetch(`${API_BASE}/api/track-meal`, { method: "POST", body: fd });
+      const res = await fetch(`${API_BASE}/api/track-meal`, { method: "POST", body: fd, headers: authHeaders() });
       if (!res.ok) throw new Error((await res.json()).detail || "Macro parsing failed");
       const result = await res.json();
       setSuccessMsg(`Meal logged! ${Math.round(result.macros?.calories ?? 0)} kcal tracked.`);
@@ -352,7 +399,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/user`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
           name: editName,
           target_calories: Number(editCalories),
@@ -378,7 +425,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/stt-settings`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({ mode }),
       });
       if (!res.ok) throw new Error("Failed to update STT mode");
@@ -442,6 +489,23 @@ export default function Dashboard() {
       await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
       await fetchBrandPrefs();
     } catch { /* silent */ }
+  };
+
+  const handleDeleteMeal = async (mealId: number) => {
+    setDeletingMealId(mealId);
+    try {
+      const res = await fetch(`${API_BASE}/api/meals/${mealId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Delete failed");
+      setSuccessMsg("Meal deleted.");
+      await fetchDashboardData();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to delete meal.");
+    } finally {
+      setDeletingMealId(null);
+    }
   };
 
   const handleLabelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -563,12 +627,31 @@ export default function Dashboard() {
             )}
           </button>
 
+          {/* Progress / history page */}
+          <button
+            onClick={() => router.push("/progress")}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition"
+            title="View Progress"
+          >
+            <BarChart2 className="w-4 h-4 text-cyan-400" />
+            <span className="hidden sm:inline">Progress</span>
+          </button>
+
           <button
             onClick={() => setShowConfig(true)}
             className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
             title="Configure Targets"
           >
             <Settings className="w-4 h-4" />
+          </button>
+
+          {/* Logout */}
+          <button
+            onClick={handleLogout}
+            className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
+            title={`Sign out (${getStoredUser()?.username ?? ""})`}
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -767,32 +850,47 @@ export default function Dashboard() {
                   return (
                     <div key={meal.id} className="bg-slate-950/70 border border-slate-900 hover:border-slate-800 rounded-2xl overflow-hidden transition duration-200">
                       {/* Meal header — always visible */}
-                      <button
-                        onClick={() => toggleMeal(meal.id)}
-                        className="w-full flex items-start justify-between gap-4 p-4 text-left cursor-pointer"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs font-semibold text-slate-200 italic leading-snug truncate">"{meal.raw_transcript}"</p>
-                          <span className="text-[10px] text-slate-500 mt-1 block">
-                            {new Date(meal.date).toLocaleDateString()} · {meal.ingredients.length} ingredient{meal.ingredients.length !== 1 ? "s" : ""}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          {/* Macro pill */}
-                          <div className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-right">
-                            <span className="text-xs font-bold text-orange-400 leading-none">{Math.round(meal.macros.calories)} kcal</span>
-                            <div className="flex gap-2 text-[9px] text-slate-400 mt-0.5 font-mono">
-                              <span className="text-purple-400">P {meal.macros.protein}g</span>
-                              <span className="text-cyan-400">C {meal.macros.carbs}g</span>
-                              <span className="text-rose-400">F {meal.macros.fat}g</span>
-                            </div>
+                      <div className="flex items-start gap-2 pr-3">
+                        {/* Expand/collapse toggle — takes up most of the row */}
+                        <button
+                          onClick={() => toggleMeal(meal.id)}
+                          className="flex-1 flex items-start justify-between gap-4 p-4 text-left cursor-pointer min-w-0"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-slate-200 italic leading-snug truncate">"{meal.raw_transcript}"</p>
+                            <span className="text-[10px] text-slate-500 mt-1 block">
+                              {new Date(meal.date).toLocaleDateString()} · {meal.ingredients.length} ingredient{meal.ingredients.length !== 1 ? "s" : ""}
+                            </span>
                           </div>
-                          {isExpanded
-                            ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                            : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
-                        </div>
-                      </button>
+
+                          <div className="flex items-center gap-3 flex-shrink-0">
+                            {/* Macro pill */}
+                            <div className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-right">
+                              <span className="text-xs font-bold text-orange-400 leading-none">{Math.round(meal.macros.calories)} kcal</span>
+                              <div className="flex gap-2 text-[9px] text-slate-400 mt-0.5 font-mono">
+                                <span className="text-purple-400">P {meal.macros.protein}g</span>
+                                <span className="text-cyan-400">C {meal.macros.carbs}g</span>
+                                <span className="text-rose-400">F {meal.macros.fat}g</span>
+                              </div>
+                            </div>
+                            {isExpanded
+                              ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                              : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
+                          </div>
+                        </button>
+
+                        {/* Delete button — outside the expand toggle so it doesn't trigger expand */}
+                        <button
+                          onClick={() => handleDeleteMeal(meal.id)}
+                          disabled={deletingMealId === meal.id}
+                          className="self-center w-7 h-7 flex-shrink-0 rounded-lg bg-slate-900 hover:bg-red-950/60 border border-slate-800 hover:border-red-800/60 flex items-center justify-center text-slate-600 hover:text-red-400 transition disabled:opacity-40"
+                          title="Delete this meal"
+                        >
+                          {deletingMealId === meal.id
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            : <Trash2 className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
 
                       {/* Ingredient breakdown — expandable */}
                       {isExpanded && (

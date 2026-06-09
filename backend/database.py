@@ -1,7 +1,7 @@
 import asyncio
 import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, Float, Date, JSON, ForeignKey, select
+from sqlalchemy import String, Integer, Float, Date, JSON, ForeignKey, select, text
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -15,9 +15,15 @@ class Base(DeclarativeBase):
 
 class User(Base):
     __tablename__ = "users"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False, default="Guest User")
+
+    # ── Auth fields — nullable so existing rows without credentials still load ──
+    # New users created via /api/auth/signup will always have both fields set.
+    username: Mapped[Optional[str]] = mapped_column(String, unique=True, index=True, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     target_calories: Mapped[float] = mapped_column(Float, default=2000.0)
     target_protein: Mapped[float] = mapped_column(Float, default=150.0)
     target_carbs: Mapped[float] = mapped_column(Float, default=200.0)
@@ -29,7 +35,7 @@ class User(Base):
 
 class IngredientCache(Base):
     __tablename__ = "ingredient_cache"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, index=True, nullable=False)
     brand: Mapped[Optional[str]] = mapped_column(String, index=True, nullable=True)
@@ -62,7 +68,7 @@ class BrandPreference(Base):
 
 class DailyFoodLog(Base):
     __tablename__ = "daily_food_logs"
-    
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     date: Mapped[datetime.date] = mapped_column(Date, default=datetime.date.today, index=True)
@@ -79,27 +85,22 @@ async def init_db():
     async with engine.begin() as conn:
         # Create all tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
-        
+
+        # ── Schema migration: add auth columns to the users table if they were
+        # added after the DB was first created (SQLite's ALTER TABLE ADD COLUMN).
+        # SQLite raises an OperationalError if the column already exists, so we
+        # swallow that and move on — idempotent on repeated startups.
+        for col_ddl in [
+            "ALTER TABLE users ADD COLUMN username VARCHAR",
+            "ALTER TABLE users ADD COLUMN password_hash VARCHAR",
+        ]:
+            try:
+                await conn.execute(text(col_ddl))
+            except Exception:
+                pass  # column already exists — fine
+
     async with AsyncSessionLocal() as session:
-        # Check if default user exists
-        result = await session.execute(select(User).where(User.id == 1))
-        default_user = result.scalar_one_or_none()
-        
-        if not default_user:
-            default_user = User(
-                id=1,
-                name="Gaurav",
-                target_calories=2200.0,
-                target_protein=150.0,
-                target_carbs=230.0,
-                target_fat=70.0,
-                current_streak=0,
-                last_active_date=None
-            )
-            session.add(default_user)
-            await session.commit()
-            
-        # Check if ingredient cache is empty, seed standard ingredients
+        # Seed ingredient cache if empty
         result = await session.execute(select(IngredientCache).limit(1))
         if not result.scalar():
             default_ingredients = [
@@ -119,28 +120,69 @@ async def init_db():
             session.add_all(default_ingredients)
             await session.commit()
 
+# ─── Auth helpers ──────────────────────────────────────────────────────────────
+
+async def create_user(
+    session: AsyncSession,
+    username: str,
+    name: str,
+    password_hash: str,
+    target_calories: float = 2000.0,
+    target_protein: float = 150.0,
+    target_carbs: float = 200.0,
+    target_fat: float = 65.0,
+) -> "User":
+    """Create a new user account and persist it."""
+    user = User(
+        name=name,
+        username=username.strip().lower(),
+        password_hash=password_hash,
+        target_calories=target_calories,
+        target_protein=target_protein,
+        target_carbs=target_carbs,
+        target_fat=target_fat,
+        current_streak=0,
+        last_active_date=None,
+    )
+    session.add(user)
+    await session.commit()
+    await session.refresh(user)
+    return user
+
+async def get_user_by_username(session: AsyncSession, username: str) -> Optional["User"]:
+    """Look up a user by their username (case-insensitive)."""
+    result = await session.execute(
+        select(User).where(User.username == username.strip().lower())
+    )
+    return result.scalar_one_or_none()
+
+async def get_user_by_id(session: AsyncSession, user_id: int) -> Optional["User"]:
+    result = await session.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()
+
+# ─── Streak helper ─────────────────────────────────────────────────────────────
+
 async def update_user_streak(session: AsyncSession, user_id: int) -> int:
     result = await session.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         return 0
-        
+
     today = datetime.date.today()
     yesterday = today - datetime.timedelta(days=1)
-    
+
     if user.last_active_date == yesterday:
-        # User was active yesterday, increment streak
         user.current_streak += 1
     elif user.last_active_date == today:
-        # User was already active today, keep streak the same
-        pass
+        pass  # already active today
     else:
-        # Streak broken or first active day
         user.current_streak = 1
-        
+
     user.last_active_date = today
     await session.commit()
     return user.current_streak
+
+# ─── App settings helpers ─────────────────────────────────────────────────────
 
 async def get_app_setting(session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
     result = await session.execute(select(AppSetting).where(AppSetting.key == key))
@@ -157,6 +199,8 @@ async def set_app_setting(session: AsyncSession, key: str, value: str) -> "AppSe
         session.add(setting)
     await session.commit()
     return setting
+
+# ─── API key helpers ──────────────────────────────────────────────────────────
 
 async def get_all_api_keys(session: AsyncSession) -> List["APIKey"]:
     result = await session.execute(select(APIKey))
@@ -181,6 +225,8 @@ async def delete_api_key(session: AsyncSession, provider: str) -> bool:
         await session.commit()
         return True
     return False
+
+# ─── Brand preference helpers ─────────────────────────────────────────────────
 
 async def get_brand_preferences(session: AsyncSession) -> List["BrandPreference"]:
     """Return all saved brand preferences."""
@@ -213,6 +259,5 @@ async def delete_brand_preference(session: AsyncSession, ingredient_name: str) -
     return False
 
 if __name__ == "__main__":
-    # Test initialization
     asyncio.run(init_db())
     print("Database initialised and seeded!")
