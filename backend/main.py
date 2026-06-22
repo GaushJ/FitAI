@@ -3,11 +3,12 @@ import re
 import io
 import json
 import base64
+import hashlib
 import shutil
 import datetime
 import anthropic
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List
 from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -23,7 +24,7 @@ load_dotenv()
 
 from database import (
     init_db, get_db, User, DailyFoodLog, BrandPreference, IngredientCache,
-    APIKey, update_user_streak, get_brand_preferences,
+    FrequentMeal, APIKey, update_user_streak, get_brand_preferences,
     set_brand_preference, delete_brand_preference,
     get_all_api_keys, save_api_key, delete_api_key,
     get_app_setting, set_app_setting,
@@ -318,6 +319,61 @@ async def transcribe_only(
             except Exception: pass
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FREQUENT MEAL HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def meal_fingerprint(resolved_ingredients: list) -> str:
+    """MD5 of sorted, lowercased ingredient names — stable identity for a meal."""
+    names = sorted(
+        (ing.get("name", "") or "").strip().lower()
+        for ing in resolved_ingredients
+        if ing.get("name")
+    )
+    return hashlib.md5("|".join(names).encode()).hexdigest()
+
+def meal_display_name(resolved_ingredients: list) -> str:
+    """Human-readable name: first 3 ingredient names joined by ' + '."""
+    names = [ing.get("name", "").strip().title() for ing in resolved_ingredients if ing.get("name")]
+    if not names:
+        return "Meal"
+    if len(names) <= 3:
+        return " + ".join(names)
+    return " + ".join(names[:3]) + f" +{len(names) - 3} more"
+
+async def _upsert_frequent_meal(
+    db: AsyncSession,
+    user_id: int,
+    resolved_ingredients: list,
+    total_meal_macros: dict,
+) -> None:
+    """Called after every successful meal log. Creates or increments the frequent meal record."""
+    fp = meal_fingerprint(resolved_ingredients)
+    existing_res = await db.execute(
+        select(FrequentMeal).where(
+            FrequentMeal.user_id == user_id,
+            FrequentMeal.meal_fingerprint == fp,
+        )
+    )
+    fm = existing_res.scalar_one_or_none()
+    today = datetime.date.today()
+    if fm:
+        fm.log_count  += 1
+        fm.last_logged = today
+        fm.macros      = total_meal_macros       # keep latest macro snapshot
+        fm.ingredients = resolved_ingredients    # keep latest portion sizes
+    else:
+        db.add(FrequentMeal(
+            user_id=user_id,
+            meal_fingerprint=fp,
+            display_name=meal_display_name(resolved_ingredients),
+            ingredients=resolved_ingredients,
+            macros=total_meal_macros,
+            log_count=1,
+            last_logged=today,
+        ))
+    # commit is handled by the caller after adding the food log
+
+# ─────────────────────────────────────────────────────────────────────────────
 # TRACK MEAL (auth-protected)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -366,6 +422,10 @@ async def track_meal(
         computed_macros={"resolved_ingredients": resolved_ingredients, "total_meal_macros": total_meal_macros},
     )
     db.add(food_log)
+
+    # Auto-upsert frequent meal record (creates or increments log_count)
+    await _upsert_frequent_meal(db, current_user.id, resolved_ingredients, total_meal_macros)
+
     await db.commit()
 
     return {
@@ -542,6 +602,256 @@ async def delete_meal(
     await db.delete(meal)
     await db.commit()
     return {"status": "deleted", "meal_id": meal_id}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FREQUENT MEALS (auth-protected)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PortionAdjustSchema(BaseModel):
+    """Optional per-ingredient gram overrides for quick-log portion editor."""
+    portions: Optional[dict] = None   # { "ingredient_name": new_grams }
+
+@app.get("/api/frequent-meals")
+async def list_frequent_meals(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return meals logged at least twice, sorted by log_count desc."""
+    res = await db.execute(
+        select(FrequentMeal)
+        .where(FrequentMeal.user_id == current_user.id, FrequentMeal.log_count >= 2)
+        .order_by(FrequentMeal.log_count.desc(), FrequentMeal.last_logged.desc())
+        .limit(20)
+    )
+    meals = res.scalars().all()
+    return [
+        {
+            "id": m.id,
+            "display_name": m.display_name,
+            "ingredients": m.ingredients,
+            "macros": m.macros,
+            "log_count": m.log_count,
+            "last_logged": m.last_logged.isoformat(),
+        }
+        for m in meals
+    ]
+
+@app.post("/api/frequent-meals/{meal_id}/log")
+async def quick_log_frequent_meal(
+    meal_id: int,
+    payload: PortionAdjustSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Quick-log a frequent meal. Optionally pass `portions` to scale ingredient grams.
+    Portions dict: { "chicken breast": 200 }  (key = ingredient name, value = new grams)
+    """
+    res = await db.execute(
+        select(FrequentMeal).where(
+            FrequentMeal.id == meal_id,
+            FrequentMeal.user_id == current_user.id,
+        )
+    )
+    fm = res.scalar_one_or_none()
+    if not fm:
+        raise HTTPException(status_code=404, detail="Frequent meal not found.")
+
+    ingredients = list(fm.ingredients)   # make a mutable copy
+
+    # Apply portion overrides if provided
+    if payload.portions:
+        for ing in ingredients:
+            name = (ing.get("name") or "").lower()
+            if name in {k.lower() for k in payload.portions}:
+                # Find the matching key (case-insensitive)
+                override_key = next(k for k in payload.portions if k.lower() == name)
+                new_grams    = float(payload.portions[override_key])
+                old_grams    = float(ing.get("grams", 100))
+                ratio        = new_grams / old_grams if old_grams else 1.0
+                # Scale every macro proportionally
+                for macro in ("calories", "protein", "carbs", "fat"):
+                    if macro in ing:
+                        ing[macro] = round(float(ing[macro]) * ratio, 1)
+                ing["grams"] = new_grams
+
+    # Recompute total macros after portion adjustment
+    total_cal = sum(float(i.get("calories", 0)) for i in ingredients)
+    total_pro = sum(float(i.get("protein",  0)) for i in ingredients)
+    total_crb = sum(float(i.get("carbs",    0)) for i in ingredients)
+    total_fat = sum(float(i.get("fat",      0)) for i in ingredients)
+    total_meal_macros = {
+        "calories": round(total_cal, 1),
+        "protein":  round(total_pro, 1),
+        "carbs":    round(total_crb, 1),
+        "fat":      round(total_fat, 1),
+    }
+
+    transcript = f"Quick-logged: {fm.display_name}"
+
+    food_log = DailyFoodLog(
+        user_id=current_user.id,
+        date=datetime.date.today(),
+        raw_transcript=transcript,
+        computed_macros={"resolved_ingredients": ingredients, "total_meal_macros": total_meal_macros},
+    )
+    db.add(food_log)
+
+    # Also keep the frequent-meal record updated
+    fm.log_count  += 1
+    fm.last_logged = datetime.date.today()
+
+    streak = await update_user_streak(db, user_id=current_user.id)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "streak": streak,
+        "ingredients": ingredients,
+        "macros": total_meal_macros,
+        "display_name": fm.display_name,
+    }
+
+@app.delete("/api/frequent-meals/{meal_id}")
+async def delete_frequent_meal(
+    meal_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(FrequentMeal).where(
+            FrequentMeal.id == meal_id,
+            FrequentMeal.user_id == current_user.id,
+        )
+    )
+    fm = res.scalar_one_or_none()
+    if not fm:
+        raise HTTPException(status_code=404, detail="Frequent meal not found.")
+    await db.delete(fm)
+    await db.commit()
+    return {"status": "deleted", "meal_id": meal_id}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SMART MACRO SUGGESTIONS — Claude-powered (auth-protected)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/suggest-meals")
+async def suggest_meals(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Computes today's remaining macros and asks Claude to suggest 3 meals that
+    best fill the gap — preferring the user's frequent meals where possible.
+    Returns a ranked list with fit_score and fit_reason.
+    """
+    # 1. Today's consumed macros
+    today = datetime.date.today()
+    logs_res = await db.execute(
+        select(DailyFoodLog).where(
+            DailyFoodLog.user_id == current_user.id,
+            DailyFoodLog.date == today,
+        )
+    )
+    logs = logs_res.scalars().all()
+
+    consumed = {"calories": 0.0, "protein": 0.0, "carbs": 0.0, "fat": 0.0}
+    for log in logs:
+        m = log.computed_macros.get("total_meal_macros", {})
+        for k in consumed:
+            consumed[k] += float(m.get(k, 0))
+
+    remaining = {
+        "calories": round(current_user.target_calories - consumed["calories"], 1),
+        "protein":  round(current_user.target_protein  - consumed["protein"],  1),
+        "carbs":    round(current_user.target_carbs    - consumed["carbs"],    1),
+        "fat":      round(current_user.target_fat      - consumed["fat"],      1),
+    }
+
+    # 2. Frequent meals (top 10 by count)
+    fm_res = await db.execute(
+        select(FrequentMeal)
+        .where(FrequentMeal.user_id == current_user.id, FrequentMeal.log_count >= 2)
+        .order_by(FrequentMeal.log_count.desc())
+        .limit(10)
+    )
+    frequent = fm_res.scalars().all()
+    frequent_summaries = [
+        {
+            "id": f.id,
+            "name": f.display_name,
+            "macros": f.macros,
+            "log_count": f.log_count,
+        }
+        for f in frequent
+    ]
+
+    # 3. Ask Claude
+    prompt = f"""You are a nutrition coach for FitVoice, a macro-tracking app.
+
+The user's REMAINING macros for today are:
+- Calories: {remaining['calories']} kcal
+- Protein:  {remaining['protein']} g
+- Carbs:    {remaining['carbs']} g
+- Fat:      {remaining['fat']} g
+
+Their frequently logged meals (prefer these when they fit):
+{json.dumps(frequent_summaries, indent=2)}
+
+Suggest exactly 3 meals that best fill the remaining macros.
+Rules:
+- Prefer frequent meals from the list above when they fit well.
+- If a frequent meal is used, set "is_frequent": true and "frequent_meal_id" to its id.
+- Otherwise set "is_frequent": false and "frequent_meal_id": null.
+- fit_score: integer 1-10 (10 = perfect macro fit).
+- fit_reason: one short sentence explaining why this meal fits.
+- estimated_macros: your best estimate for this meal's macros.
+- description: brief description (e.g. "250g grilled chicken + 150g rice").
+
+Reply with ONLY a valid JSON array of 3 objects, no markdown, no explanation:
+[
+  {{
+    "name": "...",
+    "description": "...",
+    "is_frequent": true,
+    "frequent_meal_id": 12,
+    "estimated_macros": {{"calories": 0, "protein": 0, "carbs": 0, "fat": 0}},
+    "fit_score": 9,
+    "fit_reason": "..."
+  }},
+  ...
+]"""
+
+    try:
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=800,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = response.content[0].text.strip()
+        # Strip potential markdown fences
+        raw = re.sub(r"^```[a-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+        suggestions: List[dict] = json.loads(raw)
+    except Exception as e:
+        # Return a graceful fallback so the UI doesn't break
+        suggestions = [
+            {
+                "name": "High-protein meal",
+                "description": f"A meal targeting ~{remaining['protein']}g protein",
+                "is_frequent": False,
+                "frequent_meal_id": None,
+                "estimated_macros": remaining,
+                "fit_score": 5,
+                "fit_reason": "Suggestion service temporarily unavailable.",
+            }
+        ]
+
+    return {
+        "remaining": remaining,
+        "suggestions": suggestions,
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BRAND PREFERENCES (global — no auth required)

@@ -56,6 +56,7 @@ class User(Base):
     last_active_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
 
     food_logs: Mapped[List["DailyFoodLog"]] = relationship("DailyFoodLog", back_populates="user", cascade="all, delete-orphan")
+    frequent_meals: Mapped[List["FrequentMeal"]] = relationship("FrequentMeal", back_populates="user", cascade="all, delete-orphan")
 
 class IngredientCache(Base):
     __tablename__ = "ingredient_cache"
@@ -89,6 +90,26 @@ class BrandPreference(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     ingredient_name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     preferred_brand: Mapped[str] = mapped_column(String, nullable=False)
+
+class FrequentMeal(Base):
+    """
+    Auto-maintained table of meals the user logs repeatedly.
+    A meal is identified by a fingerprint (MD5 of sorted ingredient names).
+    Created on first log, incremented on every subsequent match.
+    Surfaced in the UI as quick-log cards once log_count >= 2.
+    """
+    __tablename__ = "frequent_meals"
+
+    id: Mapped[int]              = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int]         = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    meal_fingerprint: Mapped[str] = mapped_column(String, index=True, nullable=False)
+    display_name: Mapped[str]    = mapped_column(String, nullable=False)
+    ingredients: Mapped[dict]    = mapped_column(JSON, nullable=False)   # resolved ingredient list
+    macros: Mapped[dict]         = mapped_column(JSON, nullable=False)   # total_meal_macros
+    log_count: Mapped[int]       = mapped_column(Integer, default=1)
+    last_logged: Mapped[datetime.date] = mapped_column(Date, default=datetime.date.today)
+
+    user: Mapped["User"] = relationship("User", back_populates="frequent_meals")
 
 class DailyFoodLog(Base):
     __tablename__ = "daily_food_logs"

@@ -7,7 +7,7 @@ import {
   Loader2, Utensils, Calendar, Apple, TrendingUp, Sparkles,
   Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
   Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
-  LogOut, BarChart2,
+  LogOut, BarChart2, Zap, Sliders, RefreshCw,
 } from "lucide-react";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -51,6 +51,25 @@ interface APIKeyInfo {
   env_key: string;
   is_set: boolean;
   masked_key: string;
+}
+
+interface FrequentMeal {
+  id: number;
+  display_name: string;
+  ingredients: Array<{ name: string; grams?: number; calories?: number; protein?: number; carbs?: number; fat?: number; [key: string]: any }>;
+  macros: { calories: number; protein: number; carbs: number; fat: number };
+  log_count: number;
+  last_logged: string;
+}
+
+interface MealSuggestion {
+  name: string;
+  description: string;
+  is_frequent: boolean;
+  frequent_meal_id: number | null;
+  estimated_macros: { calories: number; protein: number; carbs: number; fat: number };
+  fit_score: number;
+  fit_reason: string;
 }
 
 // Backend API base URL — falls back to localhost for local development.
@@ -210,6 +229,19 @@ export default function Dashboard() {
   // ── Meal deletion
   const [deletingMealId, setDeletingMealId] = useState<number | null>(null);
 
+  // ── Frequent meals
+  const [frequentMeals, setFrequentMeals]         = useState<FrequentMeal[]>([]);
+  const [quickLogging, setQuickLogging]           = useState<number | null>(null);
+
+  // ── Portion editor modal
+  const [portionMeal, setPortionMeal]             = useState<FrequentMeal | null>(null);
+  const [portionGrams, setPortionGrams]           = useState<Record<string, number>>({});
+
+  // ── Smart suggestions
+  const [suggestions, setSuggestions]             = useState<MealSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsRemaining, setSuggestionsRemaining] = useState<{ calories: number; protein: number; carbs: number; fat: number } | null>(null);
+
   // ── Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef   = useRef<Blob[]>([]);
@@ -262,6 +294,26 @@ export default function Dashboard() {
     } catch { /* silent */ }
   };
 
+  const fetchFrequentMeals = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/frequent-meals`, { headers: authHeaders() });
+      if (res.ok) setFrequentMeals(await res.json());
+    } catch { /* silent */ }
+  };
+
+  const fetchSuggestions = async () => {
+    setSuggestionsLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/suggest-meals`, { headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setSuggestions(data.suggestions ?? []);
+        setSuggestionsRemaining(data.remaining ?? null);
+      }
+    } catch { /* silent */ }
+    finally { setSuggestionsLoading(false); }
+  };
+
   // Re-sync any locally-cached keys the backend has lost (e.g. after a Render
   // redeploy reset its ephemeral DB). Compares localStorage against what the
   // backend currently reports as "set", and silently re-POSTs anything missing.
@@ -304,6 +356,8 @@ export default function Dashboard() {
     fetchBrandPrefs();
     fetchApiKeys().then(() => restoreKeysFromLocalStorage());
     fetchSttSettings();
+    fetchFrequentMeals();
+    fetchSuggestions();
   }, []);
 
   // ─── Timer ─────────────────────────────────────────────────────────────────
@@ -382,6 +436,8 @@ export default function Dashboard() {
       setSuccessMsg(`Meal logged! ${Math.round(result.macros?.calories ?? 0)} kcal tracked.`);
       setTextQuery("");
       await fetchDashboardData();
+      fetchFrequentMeals();
+      fetchSuggestions();
       // Auto-expand the newest meal
       setExpandedMeals((prev) => {
         const next = new Set(prev);
@@ -603,6 +659,48 @@ export default function Dashboard() {
   };
 
   const selectedKeyInfo = apiKeys.find((k) => k.provider === selectedProvider);
+
+  // ─── Quick-log a frequent meal (with optional portion override) ────────────
+
+  const handleQuickLog = async (meal: FrequentMeal, portions?: Record<string, number>) => {
+    setQuickLogging(meal.id);
+    setErrorMsg(""); setSuccessMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/api/frequent-meals/${meal.id}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ portions: portions ?? {} }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Quick-log failed");
+      const data = await res.json();
+      setSuccessMsg(`Quick-logged "${data.display_name}" — ${Math.round(data.macros?.calories ?? 0)} kcal`);
+      setPortionMeal(null);
+      await fetchDashboardData();
+      fetchFrequentMeals();
+      fetchSuggestions();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to quick-log meal.");
+    } finally {
+      setQuickLogging(null);
+    }
+  };
+
+  const openPortionEditor = (meal: FrequentMeal) => {
+    // Pre-fill with current gram values
+    const initial: Record<string, number> = {};
+    meal.ingredients.forEach((ing) => {
+      if (ing.name) initial[ing.name] = ing.grams ?? 100;
+    });
+    setPortionGrams(initial);
+    setPortionMeal(meal);
+  };
+
+  const handleDeleteFrequent = async (mealId: number) => {
+    try {
+      await fetch(`${API_BASE}/api/frequent-meals/${mealId}`, { method: "DELETE", headers: authHeaders() });
+      setFrequentMeals((prev) => prev.filter((m) => m.id !== mealId));
+    } catch { /* silent */ }
+  };
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -870,6 +968,157 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Frequent Meals Quick-Log Row ── */}
+          {frequentMeals.length > 0 && (
+            <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-5 shadow-2xl">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-yellow-400" /> Frequent Meals
+                </h2>
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Tap to quick-log</span>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-800">
+                {frequentMeals.map((meal) => (
+                  <div
+                    key={meal.id}
+                    className="flex-shrink-0 w-44 bg-slate-950/70 border border-slate-800 hover:border-purple-700/50 rounded-2xl p-3 flex flex-col gap-2 group relative transition"
+                  >
+                    {/* Name */}
+                    <p className="text-xs font-semibold text-slate-200 leading-tight line-clamp-2">{meal.display_name}</p>
+
+                    {/* Macros */}
+                    <div className="text-[10px] text-slate-500 flex flex-col gap-0.5">
+                      <span className="text-orange-400 font-bold">{Math.round(meal.macros.calories)} kcal</span>
+                      <span className="text-slate-500">P {meal.macros.protein}g · C {meal.macros.carbs}g · F {meal.macros.fat}g</span>
+                      <span className="text-slate-600">{meal.log_count}× logged</span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-1.5 mt-auto">
+                      {/* Quick-log (exact portions) */}
+                      <button
+                        onClick={() => handleQuickLog(meal)}
+                        disabled={quickLogging === meal.id}
+                        className="flex-1 flex items-center justify-center gap-1 bg-purple-700/80 hover:bg-purple-600 disabled:opacity-50 rounded-lg py-1.5 text-[10px] font-bold text-white transition cursor-pointer"
+                        title="Log this meal now"
+                      >
+                        {quickLogging === meal.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Zap className="w-3 h-3" />}
+                        Log
+                      </button>
+                      {/* Portion editor */}
+                      <button
+                        onClick={() => openPortionEditor(meal)}
+                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                        title="Adjust portions before logging"
+                      >
+                        <Sliders className="w-3 h-3" />
+                      </button>
+                      {/* Delete frequent */}
+                      <button
+                        onClick={() => handleDeleteFrequent(meal.id)}
+                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-red-900/40 hover:border-red-800/40 text-slate-500 hover:text-red-400 transition cursor-pointer"
+                        title="Remove from frequent meals"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Smart Macro Suggestions ── */}
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-400" /> Smart Suggestions
+                </h2>
+                {suggestionsRemaining && (
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    Remaining: <span className="text-orange-400">{Math.max(0, Math.round(suggestionsRemaining.calories))} kcal</span>
+                    {" · "}<span className="text-purple-400">P {Math.max(0, Math.round(suggestionsRemaining.protein))}g</span>
+                    {" · "}<span className="text-cyan-400">C {Math.max(0, Math.round(suggestionsRemaining.carbs))}g</span>
+                    {" · "}<span className="text-rose-400">F {Math.max(0, Math.round(suggestionsRemaining.fat))}g</span>
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={fetchSuggestions}
+                disabled={suggestionsLoading}
+                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition disabled:opacity-40"
+                title="Refresh suggestions"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${suggestionsLoading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+
+            {suggestionsLoading && suggestions.length === 0 ? (
+              <div className="flex items-center justify-center py-6 text-slate-500 gap-2 text-xs">
+                <Loader2 className="w-4 h-4 animate-spin" /> Asking Claude for suggestions...
+              </div>
+            ) : suggestions.length === 0 ? (
+              <p className="text-xs text-slate-600 text-center py-4">Log a meal first to get smart suggestions.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {suggestions.map((s, i) => (
+                  <div
+                    key={i}
+                    className="bg-slate-950/60 border border-slate-800 hover:border-indigo-700/40 rounded-2xl p-3 flex flex-col gap-2 transition"
+                  >
+                    {/* Score badge */}
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                        s.fit_score >= 8 ? "bg-emerald-950/50 border-emerald-500/30 text-emerald-400"
+                        : s.fit_score >= 5 ? "bg-yellow-950/40 border-yellow-500/30 text-yellow-400"
+                        : "bg-slate-800 border-slate-700 text-slate-400"
+                      }`}>
+                        Fit {s.fit_score}/10
+                      </span>
+                      {s.is_frequent && (
+                        <span className="text-[9px] font-bold text-purple-400 flex items-center gap-0.5">
+                          <Zap className="w-2.5 h-2.5" /> Frequent
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-xs font-semibold text-slate-200 leading-tight">{s.name}</p>
+                    <p className="text-[10px] text-slate-500 leading-snug">{s.description}</p>
+                    <p className="text-[10px] text-indigo-400 italic leading-snug">"{s.fit_reason}"</p>
+
+                    {/* Macros */}
+                    <div className="flex gap-2 text-[9px] font-mono text-slate-500">
+                      <span className="text-orange-400">{Math.round(s.estimated_macros.calories)} kcal</span>
+                      <span className="text-purple-400">P {s.estimated_macros.protein}g</span>
+                      <span className="text-cyan-400">C {s.estimated_macros.carbs}g</span>
+                    </div>
+
+                    {/* Log This button */}
+                    <button
+                      onClick={() => {
+                        if (s.is_frequent && s.frequent_meal_id) {
+                          const fm = frequentMeals.find((m) => m.id === s.frequent_meal_id);
+                          if (fm) openPortionEditor(fm);
+                        } else {
+                          setTextQuery(s.description);
+                          // scroll to top
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }
+                      }}
+                      className="mt-auto w-full flex items-center justify-center gap-1 bg-indigo-700/80 hover:bg-indigo-600 rounded-xl py-1.5 text-[10px] font-bold text-white transition cursor-pointer"
+                    >
+                      <Zap className="w-3 h-3" />
+                      {s.is_frequent ? "Open Portion Editor" : "Fill & Log"}
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1431,6 +1680,91 @@ export default function Dashboard() {
               {brandPrefs.length === 0 && brandTab !== "excel" && (
                 <p className="text-xs text-slate-600 text-center py-2">No brand preferences saved yet.</p>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Portion Editor Modal ═════════════════════════════════════════════ */}
+      {portionMeal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-purple-400" /> Adjust Portions
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">{portionMeal.display_name}</p>
+              </div>
+              <button onClick={() => setPortionMeal(null)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3">
+              {portionMeal.ingredients.map((ing) => {
+                const name = ing.name || "";
+                const grams = portionGrams[name] ?? ing.grams ?? 100;
+                return (
+                  <div key={name} className="flex items-center gap-3">
+                    <span className="flex-1 text-xs text-slate-300 font-medium capitalize">{name}</span>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        value={grams}
+                        onChange={(e) => setPortionGrams((prev) => ({ ...prev, [name]: Number(e.target.value) }))}
+                        className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 text-right focus:outline-none focus:border-purple-500"
+                      />
+                      <span className="text-[10px] text-slate-500 w-4">g</span>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Preview scaled macros */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 mt-2">
+                <p className="text-[9px] uppercase font-bold text-slate-600 mb-2 tracking-wider">Estimated macros with these portions</p>
+                {(() => {
+                  let cal = 0, pro = 0, crb = 0, fat = 0;
+                  portionMeal.ingredients.forEach((ing) => {
+                    const name = ing.name || "";
+                    const newG = portionGrams[name] ?? ing.grams ?? 100;
+                    const oldG = ing.grams ?? 100;
+                    const ratio = oldG > 0 ? newG / oldG : 1;
+                    cal += (ing.calories ?? 0) * ratio;
+                    pro += (ing.protein  ?? 0) * ratio;
+                    crb += (ing.carbs    ?? 0) * ratio;
+                    fat += (ing.fat      ?? 0) * ratio;
+                  });
+                  return (
+                    <div className="flex gap-3 text-[10px] font-mono">
+                      <span className="text-orange-400">{Math.round(cal)} kcal</span>
+                      <span className="text-purple-400">P {Math.round(pro)}g</span>
+                      <span className="text-cyan-400">C {Math.round(crb)}g</span>
+                      <span className="text-rose-400">F {Math.round(fat)}g</span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setPortionMeal(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleQuickLog(portionMeal, portionGrams)}
+                  disabled={quickLogging === portionMeal.id}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
+                >
+                  {quickLogging === portionMeal.id
+                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Logging...</>
+                    : <><Zap className="w-4 h-4" /> Log with These Portions</>}
+                </button>
+              </div>
             </div>
           </div>
         </div>
