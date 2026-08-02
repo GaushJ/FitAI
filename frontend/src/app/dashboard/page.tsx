@@ -52,7 +52,6 @@ interface APIKeyInfo {
   provider: string;
   label: string;
   description: string;
-  env_key: string;
   is_set: boolean;
   masked_key: string;
 }
