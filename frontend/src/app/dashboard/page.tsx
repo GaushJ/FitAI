@@ -7,7 +7,7 @@ import {
   Loader2, Utensils, Calendar, Apple, TrendingUp, Sparkles,
   Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
   Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
-  LogOut, BarChart2, Zap, Sliders, RefreshCw, Pencil,
+  LogOut, BarChart2, Zap, Sliders, RefreshCw, Pencil, Menu,
 } from "lucide-react";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -180,6 +180,9 @@ export default function Dashboard() {
   const [textQuery, setTextQuery]       = useState("");
   const [errorMsg, setErrorMsg]         = useState("");
   const [successMsg, setSuccessMsg]     = useState("");
+
+  // ── Mobile nav (hamburger menu)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // ── Settings drawer
   const [showConfig, setShowConfig]   = useState(false);
@@ -779,81 +782,157 @@ export default function Dashboard() {
       <div className="absolute top-1/3 right-1/4 w-[35rem] h-[35rem] bg-[#C9F24D]/5 rounded-full blur-[100px] pointer-events-none" />
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
-            <Utensils className="w-5 h-5 text-[#0B0C09]" />
+      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
+              <Utensils className="w-5 h-5 text-[#0B0C09]" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
+                FitVoice <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
+              </h1>
+              <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
-              FitVoice <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
-            </h1>
-            <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
+
+          {/* Hamburger toggle — mobile only */}
+          <button
+            onClick={() => setMobileNavOpen((open) => !open)}
+            className="sm:hidden flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-[#F4F5EF] transition"
+            title="Menu"
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileNavOpen}
+          >
+            {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+          <div className="hidden sm:flex items-center gap-2 sm:gap-3">
+            <div className="flex-shrink-0 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
+              <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
+              <span className="text-slate-300">Streak:</span>
+              <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+            </div>
+
+            {/* API Keys button */}
+            <button
+              onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="Manage API Keys"
+            >
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>API Keys</span>
+              {apiKeys.filter((k) => !k.is_set).length > 0 && (
+                <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  {apiKeys.filter((k) => !k.is_set).length} missing
+                </span>
+              )}
+            </button>
+
+            {/* Brand preferences button */}
+            <button
+              onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="Brand Preferences"
+            >
+              <BookMarked className="w-4 h-4 text-[#C9F24D]" />
+              <span>Brands</span>
+              {brandPrefs.length > 0 && (
+                <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
+              )}
+            </button>
+
+            {/* Progress / history page */}
+            <button
+              onClick={() => router.push("/progress")}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="View Progress"
+            >
+              <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
+              <span>Progress</span>
+            </button>
+
+            <button
+              onClick={() => setShowConfig(true)}
+              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
+              title="Configure Targets"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
+              title={`Sign out (${getStoredUser()?.username ?? ""})`}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
-          <div className="flex-shrink-0 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
-            <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
-            <span className="text-slate-300">Streak:</span>
-            <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+        {/* Mobile nav — collapsed into hamburger menu */}
+        {mobileNavOpen && (
+          <div className="sm:hidden mt-3 flex flex-col gap-2">
+            <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl px-4 py-2 flex items-center gap-2 text-xs font-semibold">
+              <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
+              <span className="text-slate-300">Streak:</span>
+              <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+            </div>
+
+            {/* API Keys button */}
+            <button
+              onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>API Keys</span>
+              {apiKeys.filter((k) => !k.is_set).length > 0 && (
+                <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  {apiKeys.filter((k) => !k.is_set).length} missing
+                </span>
+              )}
+            </button>
+
+            {/* Brand preferences button */}
+            <button
+              onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <BookMarked className="w-4 h-4 text-[#C9F24D]" />
+              <span>Brands</span>
+              {brandPrefs.length > 0 && (
+                <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
+              )}
+            </button>
+
+            {/* Progress / history page */}
+            <button
+              onClick={() => { setMobileNavOpen(false); router.push("/progress"); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
+              <span>Progress</span>
+            </button>
+
+            <button
+              onClick={() => { setShowConfig(true); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-400 hover:text-slate-200 transition"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Configure Targets</span>
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={() => { setMobileNavOpen(false); handleLogout(); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition text-sm font-semibold text-slate-500 hover:text-red-400"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign out ({getStoredUser()?.username ?? ""})</span>
+            </button>
           </div>
-
-          {/* API Keys button */}
-          <button
-            onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="Manage API Keys"
-          >
-            <KeyRound className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">API Keys</span>
-            {apiKeys.filter((k) => !k.is_set).length > 0 && (
-              <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                {apiKeys.filter((k) => !k.is_set).length} missing
-              </span>
-            )}
-          </button>
-
-          {/* Brand preferences button */}
-          <button
-            onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="Brand Preferences"
-          >
-            <BookMarked className="w-4 h-4 text-[#C9F24D]" />
-            <span className="hidden sm:inline">Brands</span>
-            {brandPrefs.length > 0 && (
-              <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
-            )}
-          </button>
-
-          {/* Progress / history page */}
-          <button
-            onClick={() => router.push("/progress")}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="View Progress"
-          >
-            <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
-            <span className="hidden sm:inline">Progress</span>
-          </button>
-
-          <button
-            onClick={() => setShowConfig(true)}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
-            title="Configure Targets"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
-            title={`Sign out (${getStoredUser()?.username ?? ""})`}
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
+        )}
       </header>
 
       {/* ── Main grid ── */}
