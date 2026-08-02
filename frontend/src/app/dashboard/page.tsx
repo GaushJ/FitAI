@@ -779,9 +779,9 @@ export default function Dashboard() {
       <div className="absolute top-1/3 right-1/4 w-[35rem] h-[35rem] bg-[#C9F24D]/5 rounded-full blur-[100px] pointer-events-none" />
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-6 md:px-12 flex justify-between items-center">
+      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)]">
+          <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
             <Utensils className="w-5 h-5 text-[#0B0C09]" />
           </div>
           <div>
@@ -792,8 +792,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
+        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
+          <div className="flex-shrink-0 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
             <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
             <span className="text-slate-300">Streak:</span>
             <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
@@ -802,7 +802,7 @@ export default function Dashboard() {
           {/* API Keys button */}
           <button
             onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
             title="Manage API Keys"
           >
             <KeyRound className="w-4 h-4 text-amber-400" />
@@ -817,7 +817,7 @@ export default function Dashboard() {
           {/* Brand preferences button */}
           <button
             onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
             title="Brand Preferences"
           >
             <BookMarked className="w-4 h-4 text-[#C9F24D]" />
@@ -830,7 +830,7 @@ export default function Dashboard() {
           {/* Progress / history page */}
           <button
             onClick={() => router.push("/progress")}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
             title="View Progress"
           >
             <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
@@ -839,7 +839,7 @@ export default function Dashboard() {
 
           <button
             onClick={() => setShowConfig(true)}
-            className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
+            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
             title="Configure Targets"
           >
             <Settings className="w-4 h-4" />
@@ -848,7 +848,7 @@ export default function Dashboard() {
           {/* Logout */}
           <button
             onClick={handleLogout}
-            className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
+            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
             title={`Sign out (${getStoredUser()?.username ?? ""})`}
           >
             <LogOut className="w-4 h-4" />
@@ -1427,7 +1427,7 @@ export default function Dashboard() {
                   <p className="text-xs text-slate-400 leading-relaxed">
                     Enter the ingredient and brand — macros are fetched automatically and can be edited before saving.
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Ingredient</label>
                       <input
@@ -1504,7 +1504,7 @@ export default function Dashboard() {
                   <p className="text-xs text-slate-400 leading-relaxed">
                     Photo the nutrition facts panel on the back of the pack. Claude will read the exact values and save them — no more guessing.
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Ingredient</label>
                       <input
@@ -1728,7 +1728,7 @@ export default function Dashboard() {
                   />
 
                   {/* Export card */}
-                  <div className="bg-slate-950/60 border border-emerald-900/40 rounded-2xl p-4 flex items-center justify-between gap-4">
+                  <div className="bg-slate-950/60 border border-emerald-900/40 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                     <div>
                       <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                         <span className="text-emerald-400">↓</span> Download Preferences
@@ -1741,14 +1741,14 @@ export default function Dashboard() {
                     <button
                       onClick={handleExportExcel}
                       disabled={brandPrefs.length === 0}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition shadow"
+                      className="flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition shadow w-full sm:w-auto"
                     >
                       <Plus className="w-3.5 h-3.5 rotate-45" /> Export .xlsx
                     </button>
                   </div>
 
                   {/* Import card */}
-                  <div className="bg-slate-950/60 border border-[#C9F24D]/15 rounded-2xl p-4 flex items-center justify-between gap-4">
+                  <div className="bg-slate-950/60 border border-[#C9F24D]/15 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                     <div>
                       <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
                         <span className="text-[#C9F24D]">↑</span> Upload &amp; Restore
@@ -1761,7 +1761,7 @@ export default function Dashboard() {
                     <button
                       onClick={() => xlsxInputRef.current?.click()}
                       disabled={xlsxImporting}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#C9F24D] hover:bg-[#D4F56A] disabled:opacity-40 text-[#0B0C09] text-xs font-bold transition shadow"
+                      className="flex-shrink-0 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#C9F24D] hover:bg-[#D4F56A] disabled:opacity-40 text-[#0B0C09] text-xs font-bold transition shadow w-full sm:w-auto"
                     >
                       {xlsxImporting
                         ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
@@ -1772,7 +1772,7 @@ export default function Dashboard() {
                   {/* Format reminder */}
                   <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected columns</p>
-                    <div className="grid grid-cols-6 gap-1 text-[9px] text-center">
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[9px] text-center">
                       {["Ingredient", "Brand", "Calories/100g", "Protein/100g", "Carbs/100g", "Fat/100g"].map((h, i) => (
                         <div key={h} className={`px-1 py-1 rounded font-mono font-bold ${i < 2 ? "bg-[#C9F24D]/10 text-[#D4F56A] border border-[#C9F24D]/15" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>
                           {h}
