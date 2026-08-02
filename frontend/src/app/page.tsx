@@ -95,18 +95,50 @@ export default function LandingPage() {
         .btn-primary:hover{background:#d6fb5f;transform:scale(1.02)}
         .btn-ghost{display:inline-flex;align-items:center;gap:9px;background:transparent;border:1px solid rgba(255,255,255,0.16);color:#F4F5EF;font-size:16px;font-weight:600;cursor:pointer;padding:15px 22px;border-radius:14px;transition:border-color .15s}
         .btn-ghost:hover{border-color:rgba(201,242,77,0.5)}
+
+        /* ── Responsive overrides ─────────────────────────────────────────── */
+        @media (max-width: 900px) {
+          .fv-split{grid-template-columns:1fr !important;gap:40px !important}
+        }
+        @media (max-width: 860px) {
+          .fv-grid-3{grid-template-columns:repeat(2,1fr) !important}
+        }
+        @media (max-width: 560px) {
+          .fv-grid-3{grid-template-columns:1fr !important}
+        }
+        @media (max-width: 760px) {
+          .fv-grid-4{grid-template-columns:repeat(2,1fr) !important}
+        }
+        @media (max-width: 420px) {
+          .fv-grid-4{grid-template-columns:1fr !important}
+        }
+        @media (max-width: 640px) {
+          .fv-nav-inner{padding:0 16px !important}
+          .fv-hero{padding:128px 20px 56px !important}
+          .fv-how{padding:64px 20px !important}
+          .fv-feature-inner{padding:64px 20px !important}
+          .fv-streak{padding:64px 20px !important}
+          .fv-stats{padding:64px 20px !important}
+          .fv-testimonial{padding:32px 20px 64px !important}
+          .fv-testimonial-card{padding:36px 24px !important}
+          .fv-cta{padding:72px 20px !important}
+        }
+        @media (max-width: 380px) {
+          .fv-nav-actions{gap:8px !important}
+          .fv-nav-brand-text{font-size:15px !important}
+        }
       `}</style>
 
       {/* ── NAV ── */}
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, backdropFilter: "blur(16px)", background: "rgba(11,12,9,0.72)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
-        <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 32px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div className="fv-nav-inner" style={{ maxWidth: 1240, margin: "0 auto", padding: "0 32px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               <MicIcon size={16} color={BG} />
             </div>
-            <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>FitVoice</span>
+            <span className="fv-nav-brand-text" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>FitVoice</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="fv-nav-actions" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button onClick={() => router.push("/login")} style={{ background: "none", border: "none", color: "#C8CABF", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "8px 12px" }}>Sign in</button>
             <button onClick={() => router.push("/login")} style={{ background: ACCENT, border: "none", color: BG, fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "10px 18px", borderRadius: 11 }}>Get started</button>
           </div>
@@ -114,9 +146,9 @@ export default function LandingPage() {
       </nav>
 
       {/* ── HERO ── */}
-      <section style={{ position: "relative", padding: "148px 32px 80px", maxWidth: 1240, margin: "0 auto" }}>
+      <section className="fv-hero" style={{ position: "relative", padding: "148px 32px 80px", maxWidth: 1240, margin: "0 auto" }}>
         <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", width: 780, height: 520, background: "radial-gradient(ellipse at center,rgba(201,242,77,0.10),transparent 70%)", pointerEvents: "none", filter: "blur(20px)" }} />
-        <div style={{ position: "relative", display: "grid", gridTemplateColumns: "1.05fr 0.95fr", gap: 56, alignItems: "center" }}>
+        <div className="fv-split" style={{ position: "relative", display: "grid", gridTemplateColumns: "1.05fr 0.95fr", gap: 56, alignItems: "center" }}>
           <div>
             <div className="fv-h1 fv-d1" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(201,242,77,0.10)", border: "1px solid rgba(201,242,77,0.28)", borderRadius: 100, padding: "6px 14px", fontSize: 12, fontWeight: 600, color: ACCENT, letterSpacing: "0.02em", marginBottom: 28 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: ACCENT, display: "inline-block" }} />
@@ -199,12 +231,12 @@ export default function LandingPage() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how" style={{ padding: "110px 32px", maxWidth: 1240, margin: "0 auto" }}>
+      <section id="how" className="fv-how" style={{ padding: "110px 32px", maxWidth: 1240, margin: "0 auto" }}>
         <div data-reveal style={{ textAlign: "center", marginBottom: 72 }}>
           <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>Three steps</p>
           <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(32px,4vw,54px)", lineHeight: 1.02, letterSpacing: "-0.03em" }}>From spoken to logged<br />in under five seconds.</h2>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 22 }}>
+        <div className="fv-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 22 }}>
           {[
             { n:"01", t:"Speak your meal",    d:"Tap the mic and say exactly what you ate — brand, quantity, prep. Or just type it.",          path:"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" },
             { n:"02", t:"AI resolves macros", d:"The pipeline extracts ingredients, matches your brands and calculates exact macros.",           path:"M12 2a9 9 0 1 0 9 9M12 2v9l6 4" },
@@ -224,7 +256,7 @@ export default function LandingPage() {
 
       {/* ── VOICE FEATURE ── */}
       <section style={{ background: "#0E0F0A", borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <div style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+        <div className="fv-split fv-feature-inner" style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
           <div data-reveal>
             <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>The voice engine</p>
             <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,3.5vw,48px)", lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 22 }}>Talking is faster<br />than typing.</h2>
@@ -276,7 +308,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── STREAK HEATMAP ── */}
-      <section style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+      <section className="fv-split fv-streak" style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
         <div data-reveal>
           <div style={{ background: "linear-gradient(160deg,#17190F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 24, padding: 28 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
@@ -318,12 +350,12 @@ export default function LandingPage() {
       </section>
 
       {/* ── STATS ── */}
-      <section ref={statsRef} style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px" }}>
+      <section ref={statsRef} className="fv-stats" style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px" }}>
         <div data-reveal style={{ textAlign: "center", marginBottom: 60 }}>
           <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>By the numbers</p>
           <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,4vw,54px)", lineHeight: 1.02, letterSpacing: "-0.03em" }}>Precision that adds up.</h2>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
+        <div className="fv-grid-4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
           {[
             { val: fmt(counts.cal),   color: ACCENT,    label: "Avg daily calories tracked" },
             { val: fmt(counts.prot)+"g", color:"#F4F5EF", label: "Avg protein logged / day" },
@@ -339,8 +371,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── TESTIMONIAL ── */}
-      <section style={{ maxWidth: 880, margin: "0 auto", padding: "40px 32px 110px" }}>
-        <div data-reveal style={{ background: "linear-gradient(160deg,#16180F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 26, padding: "56px 48px", textAlign: "center", position: "relative" }}>
+      <section className="fv-testimonial" style={{ maxWidth: 880, margin: "0 auto", padding: "40px 32px 110px" }}>
+        <div data-reveal className="fv-testimonial-card" style={{ background: "linear-gradient(160deg,#16180F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 26, padding: "56px 48px", textAlign: "center", position: "relative" }}>
           <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 22 }}>
             {Array.from({length:5}).map((_,i)=>(
               <svg key={i} width={20} height={20} viewBox="0 0 24 24" fill={ACCENT}><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.8 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z" /></svg>
@@ -360,7 +392,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA ── */}
-      <section style={{ position: "relative", padding: "120px 32px", overflow: "hidden" }}>
+      <section className="fv-cta" style={{ position: "relative", padding: "120px 32px", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 900, height: 440, background: "radial-gradient(ellipse at center,rgba(201,242,77,0.12),transparent 70%)", pointerEvents: "none", filter: "blur(20px)" }} />
         <div data-reveal style={{ position: "relative", maxWidth: 720, margin: "0 auto", textAlign: "center" }}>
           <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 800, fontSize: "clamp(36px,5vw,68px)", lineHeight: 0.98, letterSpacing: "-0.03em", marginBottom: 24 }}>

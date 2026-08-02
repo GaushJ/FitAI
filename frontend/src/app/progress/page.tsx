@@ -359,7 +359,7 @@ export default function ProgressPage() {
                     );
                   })}
                 </div>
-                <div className="flex items-center gap-4 mt-3 text-[10px] text-slate-500">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-3 text-[10px] text-slate-500">
                   <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-gradient-to-t from-green-600 to-emerald-500" /> Goal met</div>
                   <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-gradient-to-t from-orange-600 to-orange-500" /> Over goal</div>
                   <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-slate-600" /> Under goal</div>
