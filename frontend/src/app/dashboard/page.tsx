@@ -1386,7 +1386,7 @@ export default function Dashboard() {
             <div className="p-6 border-b border-slate-800 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <BookMarked className="w-5 h-5 text-[#C9F24D]" /> Brand Preferences
+                  <BookMarked className="w-5 h-5 text-[#C9F24D]" /> Brands Saved
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Save brand-specific macros. The AI will use these automatically every time you log that ingredient.
