@@ -1,1864 +1,426 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Mic, Square, Flame, Dumbbell, Settings, Check, AlertCircle,
-  Loader2, Utensils, Calendar, Apple, TrendingUp, Sparkles,
-  Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
-  Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
-  LogOut, BarChart2, Zap, Sliders, RefreshCw,
-} from "lucide-react";
 
-// ─── Interfaces ──────────────────────────────────────────────────────────────
+const ACCENT = "#C9F24D";
+const BG = "#0B0C09";
 
-interface UserProfile {
-  name: string;
-  current_streak: number;
-  target_calories: number;
-  target_protein: number;
-  target_carbs: number;
-  target_fat: number;
-}
-
-interface Ingredient {
-  name: string;
-  brand: string | null;
-  weight_g: number;
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fat_per_100g: number;
-}
-
-interface MealLog {
-  id: number;
-  raw_transcript: string;
-  date: string;
-  macros: { calories: number; protein: number; carbs: number; fat: number };
-  ingredients: Ingredient[];
-}
-
-interface BrandPref {
-  ingredient_name: string;
-  preferred_brand: string;
-}
-
-interface APIKeyInfo {
-  provider: string;
-  label: string;
-  description: string;
-  env_key: string;
-  is_set: boolean;
-  masked_key: string;
-}
-
-interface FrequentMeal {
-  id: number;
-  display_name: string;
-  ingredients: Array<{ name: string; grams?: number; calories?: number; protein?: number; carbs?: number; fat?: number; [key: string]: any }>;
-  macros: { calories: number; protein: number; carbs: number; fat: number };
-  log_count: number;
-  last_logged: string;
-}
-
-interface MealSuggestion {
-  name: string;
-  description: string;
-  is_frequent: boolean;
-  frequent_meal_id: number | null;
-  estimated_macros: { calories: number; protein: number; carbs: number; fat: number };
-  fit_score: number;
-  fit_reason: string;
-}
-
-// Backend API base URL — falls back to localhost for local development.
-// Set NEXT_PUBLIC_API_URL in your hosting provider's env vars (e.g. Vercel)
-// to point at your deployed backend (e.g. https://fitvoice-backend.onrender.com).
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
-// ─── Local-storage API key persistence ─────────────────────────────────────
-// Render's free tier uses an EPHEMERAL filesystem — the SQLite DB (and any
-// keys saved through the in-app "API Keys" manager) gets wiped on every
-// redeploy / restart. To survive that, we mirror saved keys into the
-// browser's localStorage and silently re-sync them back to the backend on
-// load whenever it reports a provider as "not set". This means once you've
-// entered a key from a given browser, future redeploys won't make you
-// re-enter it — the frontend re-saves it automatically.
-const LOCAL_KEYS_STORAGE_KEY = "fitvoice_api_keys";
-
-const loadLocalKeys = (): Record<string, string> => {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(LOCAL_KEYS_STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
-
-const saveLocalKey = (provider: string, apiKey: string) => {
-  if (typeof window === "undefined") return;
-  try {
-    const all = loadLocalKeys();
-    all[provider] = apiKey;
-    window.localStorage.setItem(LOCAL_KEYS_STORAGE_KEY, JSON.stringify(all));
-  } catch { /* localStorage unavailable (e.g. private browsing) — ignore */ }
-};
-
-const removeLocalKey = (provider: string) => {
-  if (typeof window === "undefined") return;
-  try {
-    const all = loadLocalKeys();
-    delete all[provider];
-    window.localStorage.setItem(LOCAL_KEYS_STORAGE_KEY, JSON.stringify(all));
-  } catch { /* ignore */ }
-};
-
-// ─── Auth token helpers ───────────────────────────────────────────────────────
-// The JWT returned by /api/auth/login (or /signup) is stored here.
-// Every authenticated request must send it as "Authorization: Bearer <token>".
-const AUTH_TOKEN_KEY = "fitvoice_auth_token";
-const AUTH_USER_KEY  = "fitvoice_auth_user";
-
-const getStoredToken = () =>
-  typeof window !== "undefined" ? localStorage.getItem(AUTH_TOKEN_KEY) : null;
-
-const getStoredUser = (): { id: number; name: string; username: string } | null => {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(AUTH_USER_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
-};
-
-const clearAuth = () => {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
-};
-
-// Build the Authorization header for every authenticated fetch call.
-const authHeaders = (): Record<string, string> => ({
-  Authorization: `Bearer ${getStoredToken() ?? ""}`,
-});
-
-const PROVIDER_COLORS: Record<string, string> = {
-  anthropic: "from-orange-500 to-amber-500",
-  openai:    "from-emerald-500 to-teal-500",
-  groq:      "from-purple-500 to-violet-500",
-  gemini:    "from-blue-500 to-cyan-500",
-  tavily:    "from-rose-500 to-pink-500",
-};
-
-const PROVIDER_BADGES: Record<string, string> = {
-  anthropic: "Required",
-  openai:    "Optional",
-  groq:      "Optional",
-  gemini:    "Optional",
-  tavily:    "Optional",
-};
-
-// ─── Component ───────────────────────────────────────────────────────────────
-
-export default function Dashboard() {
+export default function LandingPage() {
   const router = useRouter();
+  const statsRef = useRef<HTMLDivElement>(null);
+  const [counts, setCounts] = useState({ cal: 0, prot: 0, meals: 0, users: 0 });
+  const [started, setStarted] = useState(false);
 
-  // ── Core state
-  const [profile, setProfile] = useState<UserProfile>({
-    name: "Gaurav", current_streak: 0,
-    target_calories: 2000, target_protein: 150, target_carbs: 200, target_fat: 65,
-  });
-  const [totals, setTotals]   = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
-  const [meals, setMeals]     = useState<MealLog[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ── Recording / processing state
-  const [isRecording, setIsRecording]   = useState(false);
-  const [recordTime, setRecordTime]     = useState(0);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [textQuery, setTextQuery]       = useState("");
-  const [errorMsg, setErrorMsg]         = useState("");
-  const [successMsg, setSuccessMsg]     = useState("");
-
-  // ── Settings drawer
-  const [showConfig, setShowConfig]   = useState(false);
-  const [editName, setEditName]       = useState(profile.name);
-  const [editCalories, setEditCalories] = useState(profile.target_calories);
-  const [editProtein, setEditProtein] = useState(profile.target_protein);
-  const [editCarbs, setEditCarbs]     = useState(profile.target_carbs);
-  const [editFat, setEditFat]         = useState(profile.target_fat);
-
-  // ── Brand preferences state
-  const [brandPrefs, setBrandPrefs]       = useState<BrandPref[]>([]);
-  const [showBrandModal, setShowBrandModal] = useState(false);
-  const [brandTab, setBrandTab]           = useState<"name" | "label" | "excel">("name");
-  const [xlsxImporting, setXlsxImporting] = useState(false);
-  const [xlsxMsg, setXlsxMsg]             = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const xlsxInputRef                      = useRef<HTMLInputElement>(null);
-  const [prefIngredient, setPrefIngredient] = useState("");
-  const [prefBrand, setPrefBrand]         = useState("");
-  const [labelFile, setLabelFile]         = useState<File | null>(null);
-  const [labelPreview, setLabelPreview]   = useState("");
-  const [brandSaving, setBrandSaving]     = useState(false);
-  const [brandMsg, setBrandMsg]           = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [extractedMacros, setExtractedMacros] = useState<Record<string, number> | null>(null);
-
-  // ── API Keys state
-  const [apiKeys, setApiKeys]             = useState<APIKeyInfo[]>([]);
-  const [showKeysModal, setShowKeysModal] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<string>("");
-  const [keyInput, setKeyInput]           = useState("");
-  const [showKeyInput, setShowKeyInput]   = useState(false);
-  const [keySaving, setKeySaving]         = useState(false);
-  const [keyMsg, setKeyMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [providerDropOpen, setProviderDropOpen] = useState(false);
-
-  // ── STT engine settings (dev-only toggle: cloud vs local Whisper)
-  const [sttSettings, setSttSettings] = useState<{
-    allow_local_choice: boolean;
-    current_mode: string;
-    is_production: boolean;
-    modes: Array<{ value: string; label: string; description: string }>;
-  } | null>(null);
-  const [sttSaving, setSttSaving] = useState(false);
-
-  // ── Expanded meal cards
-  const [expandedMeals, setExpandedMeals] = useState<Set<number>>(new Set());
-
-  // ── Meal deletion
-  const [deletingMealId, setDeletingMealId] = useState<number | null>(null);
-
-  // ── Frequent meals
-  const [frequentMeals, setFrequentMeals]         = useState<FrequentMeal[]>([]);
-  const [quickLogging, setQuickLogging]           = useState<number | null>(null);
-
-  // ── Portion editor modal
-  const [portionMeal, setPortionMeal]             = useState<FrequentMeal | null>(null);
-  const [portionGrams, setPortionGrams]           = useState<Record<string, number>>({});
-
-  // ── Smart suggestions
-  const [suggestions, setSuggestions]             = useState<MealSuggestion[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [suggestionsRemaining, setSuggestionsRemaining] = useState<{ calories: number; protein: number; carbs: number; fat: number } | null>(null);
-
-  // ── Refs
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef   = useRef<Blob[]>([]);
-  const timerRef         = useRef<NodeJS.Timeout | null>(null);
-  const labelInputRef    = useRef<HTMLInputElement>(null);
-
-  // ─── Data fetching ─────────────────────────────────────────────────────────
-
-  const fetchDashboardData = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/dashboard`, { headers: authHeaders() });
-      if (res.status === 401) { handleLogout(); return; }
-      if (!res.ok) throw new Error("Backend connection failed");
-      const data = await res.json();
-      setProfile(data.user);
-      setTotals(data.totals);
-      setMeals(data.meals);
-      setEditName(data.user.name);
-      setEditCalories(data.user.target_calories);
-      setEditProtein(data.user.target_protein);
-      setEditCarbs(data.user.target_carbs);
-      setEditFat(data.user.target_fat);
-      setErrorMsg("");
-    } catch (err) {
-      console.error(err);
-      setErrorMsg(`Unable to connect to the FastAPI backend (${API_BASE}). Please ensure it is running and reachable.`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchBrandPrefs = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/brand-preferences`);
-      if (res.ok) setBrandPrefs(await res.json());
-    } catch { /* silent */ }
-  };
-
-  const fetchApiKeys = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/keys`);
-      if (res.ok) setApiKeys(await res.json());
-    } catch { /* silent */ }
-  };
-
-  const fetchSttSettings = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/stt-settings`);
-      if (res.ok) setSttSettings(await res.json());
-    } catch { /* silent */ }
-  };
-
-  const fetchFrequentMeals = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/frequent-meals`, { headers: authHeaders() });
-      if (res.ok) setFrequentMeals(await res.json());
-    } catch { /* silent */ }
-  };
-
-  const fetchSuggestions = async () => {
-    setSuggestionsLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/suggest-meals`, { headers: authHeaders() });
-      if (res.ok) {
-        const data = await res.json();
-        setSuggestions(data.suggestions ?? []);
-        setSuggestionsRemaining(data.remaining ?? null);
-      }
-    } catch { /* silent */ }
-    finally { setSuggestionsLoading(false); }
-  };
-
-  // Re-sync any locally-cached keys the backend has lost (e.g. after a Render
-  // redeploy reset its ephemeral DB). Compares localStorage against what the
-  // backend currently reports as "set", and silently re-POSTs anything missing.
-  const restoreKeysFromLocalStorage = async () => {
-    const cached = loadLocalKeys();
-    const providers = Object.keys(cached);
-    if (providers.length === 0) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/keys`);
-      if (!res.ok) return;
-      const current: APIKeyInfo[] = await res.json();
-      const missing = providers.filter((p) => {
-        const info = current.find((k) => k.provider === p);
-        return !info || !info.is_set;
-      });
-      for (const provider of missing) {
-        await fetch(`${API_BASE}/api/keys`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, api_key: cached[provider] }),
-        });
-      }
-      if (missing.length > 0) await fetchApiKeys();
-    } catch { /* best-effort restore — fail silently */ }
-  };
-
-  // ── Logout helper ──────────────────────────────────────────────────────────
-  const handleLogout = () => {
-    clearAuth();
-    router.replace("/login");
-  };
-
+  // scroll-reveal
   useEffect(() => {
-    // Redirect to login if no JWT is stored
-    if (!getStoredToken()) {
-      router.replace("/login");
-      return;
-    }
-    fetchDashboardData();
-    fetchBrandPrefs();
-    fetchApiKeys().then(() => restoreKeysFromLocalStorage());
-    fetchSttSettings();
-    fetchFrequentMeals();
-    fetchSuggestions();
+    const io = new IntersectionObserver(
+      (entries) => entries.forEach((e) => {
+        if (e.isIntersecting) {
+          (e.target as HTMLElement).style.opacity = "1";
+          (e.target as HTMLElement).style.transform = "none";
+          io.unobserve(e.target);
+        }
+      }),
+      { threshold: 0.12 }
+    );
+    document.querySelectorAll("[data-reveal]").forEach((el) => io.observe(el));
+    return () => io.disconnect();
   }, []);
 
-  // ─── Timer ─────────────────────────────────────────────────────────────────
-
+  // counter animation
   useEffect(() => {
-    if (isRecording) {
-      timerRef.current = setInterval(() => setRecordTime((p) => p + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-      setRecordTime(0);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [isRecording]);
+    if (!statsRef.current) return;
+    const sio = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !started) {
+          setStarted(true);
+          const targets = { cal: 2840, prot: 196, meals: 142000, users: 11800 };
+          const dur = 1800;
+          const t0 = performance.now();
+          const tick = (now: number) => {
+            const p = Math.min((now - t0) / dur, 1);
+            const e = 1 - Math.pow(1 - p, 3);
+            setCounts({
+              cal:   Math.round(e * targets.cal),
+              prot:  Math.round(e * targets.prot),
+              meals: Math.round(e * targets.meals),
+              users: Math.round(e * targets.users),
+            });
+            if (p < 1) requestAnimationFrame(tick);
+          };
+          requestAnimationFrame(tick);
+          sio.disconnect();
+        }
+      },
+      { threshold: 0.3 }
+    );
+    sio.observe(statsRef.current);
+    return () => sio.disconnect();
+  }, [started]);
 
-  // ─── Recording ─────────────────────────────────────────────────────────────
+  const fmt = (n: number) => n.toLocaleString("en-US");
 
-  const startRecording = async () => {
-    setErrorMsg(""); setSuccessMsg("");
-    audioChunksRef.current = [];
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      let opts = { mimeType: "audio/webm" };
-      if (!MediaRecorder.isTypeSupported(opts.mimeType)) opts = { mimeType: "audio/ogg" };
-      if (!MediaRecorder.isTypeSupported(opts.mimeType)) (opts as any) = {};
-      const mr = new MediaRecorder(stream, opts);
-      mediaRecorderRef.current = mr;
-      mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || "audio/webm" });
-        await handleAudioUpload(blob);
-        stream.getTracks().forEach((t) => t.stop());
-      };
-      mr.start(200);
-      setIsRecording(true);
-    } catch (err) {
-      setErrorMsg("Failed to access your microphone. Please verify browser permissions.");
-    }
-  };
+  const heights = [0.4,0.7,1,0.55,0.85,0.3,0.95,0.6,0.45,0.8,1,0.5,0.7,0.35,0.9,0.6,0.45,0.75,1,0.4,0.65,0.85,0.5,0.3];
+  const pal = ["rgba(255,255,255,0.05)","rgba(201,242,77,0.3)","rgba(201,242,77,0.6)","#C9F24D"];
+  let seed = 7;
+  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const heatCells = Array.from({ length: 91 }).map((_, i) => {
+    const r = rnd();
+    const lvl = r < 0.28 ? 0 : r < 0.45 ? 1 : r < 0.66 ? 2 : 3;
+    return <div key={i} style={{ width: "100%", aspectRatio: "1", borderRadius: 3, background: pal[lvl] }} />;
+  });
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  const handleAudioUpload = async (blob: Blob) => {
-    setIsProcessing(true); setErrorMsg(""); setSuccessMsg("");
-    const fd = new FormData();
-    fd.append("file", blob, "recording.webm");
-    try {
-      const res = await fetch(`${API_BASE}/api/transcribe`, { method: "POST", body: fd, headers: authHeaders() });
-      if (!res.ok) throw new Error((await res.json()).detail || "Transcription failed");
-      const data = await res.json();
-      setTextQuery(data.transcript);
-      setSuccessMsg("Voice transcribed! Review and edit below, then click Confirm & Log.");
-    } catch (err: any) {
-      setErrorMsg(err.message || "Network error while transcribing.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // ─── Meal submit ───────────────────────────────────────────────────────────
-
-  const handleTextSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!textQuery.trim()) return;
-    setIsProcessing(true); setErrorMsg(""); setSuccessMsg("");
-    const fd = new FormData();
-    fd.append("text", textQuery.trim());
-    try {
-      const res = await fetch(`${API_BASE}/api/track-meal`, { method: "POST", body: fd, headers: authHeaders() });
-      if (!res.ok) throw new Error((await res.json()).detail || "Macro parsing failed");
-      const result = await res.json();
-      setSuccessMsg(`Meal logged! ${Math.round(result.macros?.calories ?? 0)} kcal tracked.`);
-      setTextQuery("");
-      await fetchDashboardData();
-      fetchFrequentMeals();
-      fetchSuggestions();
-      // Auto-expand the newest meal
-      setExpandedMeals((prev) => {
-        const next = new Set(prev);
-        if (result.id) next.add(result.id);
-        return next;
-      });
-    } catch (err: any) {
-      setErrorMsg(err.message || "Network error while processing meal.");
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // ─── Profile update ────────────────────────────────────────────────────────
-
-  const handleProfileUpdate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE}/api/user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          name: editName,
-          target_calories: Number(editCalories),
-          target_protein: Number(editProtein),
-          target_carbs: Number(editCarbs),
-          target_fat: Number(editFat),
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to update targets");
-      setSuccessMsg("Macro targets updated!");
-      setShowConfig(false);
-      await fetchDashboardData();
-    } catch (err: any) {
-      setErrorMsg("Error saving profile.");
-    }
-  };
-
-  // ─── STT engine mode (dev-only) ────────────────────────────────────────────
-
-  const handleSttModeChange = async (mode: string) => {
-    if (!sttSettings || sttSettings.is_production) return;
-    setSttSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/stt-settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ mode }),
-      });
-      if (!res.ok) throw new Error("Failed to update STT mode");
-      await fetchSttSettings();
-      setSuccessMsg(`Speech-to-text engine switched to "${sttSettings.modes.find(m => m.value === mode)?.label}".`);
-    } catch {
-      setErrorMsg("Failed to update STT engine preference.");
-    } finally {
-      setSttSaving(false);
-    }
-  };
-
-  // ─── Brand preferences ─────────────────────────────────────────────────────
-
-  const handleSaveBrandByName = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prefIngredient.trim() || !prefBrand.trim()) return;
-    setBrandSaving(true); setBrandMsg(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/brand-preferences`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ingredient_name: prefIngredient.trim(), preferred_brand: prefBrand.trim() }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      setBrandMsg({ type: "ok", text: `Saved! Next time you log "${prefIngredient}", the AI will use "${prefBrand}" data.` });
-      setPrefIngredient(""); setPrefBrand("");
-      await fetchBrandPrefs();
-    } catch {
-      setBrandMsg({ type: "err", text: "Failed to save brand preference." });
-    } finally {
-      setBrandSaving(false);
-    }
-  };
-
-  const handleSaveBrandByLabel = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prefIngredient.trim() || !prefBrand.trim() || !labelFile) return;
-    setBrandSaving(true); setBrandMsg(null); setExtractedMacros(null);
-    const fd = new FormData();
-    fd.append("ingredient_name", prefIngredient.trim());
-    fd.append("preferred_brand", prefBrand.trim());
-    fd.append("image", labelFile);
-    try {
-      const res = await fetch(`${API_BASE}/api/brand-preferences/label`, { method: "POST", body: fd });
-      if (!res.ok) throw new Error((await res.json()).detail || "Extraction failed");
-      const data = await res.json();
-      setExtractedMacros(data.macros);
-      setBrandMsg({ type: "ok", text: `Label read! Exact macros for "${prefBrand} ${prefIngredient}" saved permanently.` });
-      setPrefIngredient(""); setPrefBrand(""); setLabelFile(null); setLabelPreview("");
-      await fetchBrandPrefs();
-    } catch (err: any) {
-      setBrandMsg({ type: "err", text: err.message || "Failed to extract label." });
-    } finally {
-      setBrandSaving(false);
-    }
-  };
-
-  const handleDeletePref = async (name: string) => {
-    try {
-      await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(name)}`, { method: "DELETE" });
-      await fetchBrandPrefs();
-    } catch { /* silent */ }
-  };
-
-  const handleDeleteMeal = async (mealId: number) => {
-    setDeletingMealId(mealId);
-    try {
-      const res = await fetch(`${API_BASE}/api/meals/${mealId}`, {
-        method: "DELETE",
-        headers: authHeaders(),
-      });
-      if (!res.ok) throw new Error((await res.json()).detail || "Delete failed");
-      setSuccessMsg("Meal deleted.");
-      await fetchDashboardData();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to delete meal.");
-    } finally {
-      setDeletingMealId(null);
-    }
-  };
-
-  // ── Excel export (download) ────────────────────────────────────────────────
-  const handleExportExcel = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/brand-preferences/export`);
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement("a");
-      a.href     = url;
-      // Use the filename the server suggests, or fall back to a default
-      const cd   = res.headers.get("Content-Disposition") ?? "";
-      const match = cd.match(/filename="?([^"]+)"?/);
-      a.download = match?.[1] ?? "fitvoice_brand_preferences.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      setXlsxMsg({ type: "err", text: "Failed to download Excel file." });
-    }
-  };
-
-  // ── Excel import (upload) ──────────────────────────────────────────────────
-  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Reset input so the same file can be re-selected if needed
-    e.target.value = "";
-    setXlsxImporting(true); setXlsxMsg(null);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`${API_BASE}/api/brand-preferences/import`, {
-        method: "POST",
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Import failed");
-      const warn = data.warnings?.length ? `  ⚠️ ${data.warnings.length} warning(s).` : "";
-      setXlsxMsg({ type: "ok", text: `${data.message}${warn}` });
-      await fetchBrandPrefs();
-    } catch (err: any) {
-      setXlsxMsg({ type: "err", text: err.message || "Failed to import Excel file." });
-    } finally {
-      setXlsxImporting(false);
-    }
-  };
-
-  const handleLabelFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setLabelFile(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setLabelPreview(ev.target?.result as string);
-    reader.readAsDataURL(file);
-    setExtractedMacros(null);
-  };
-
-  // ─── API Key handlers ──────────────────────────────────────────────────────
-
-  const handleSaveKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProvider || !keyInput.trim()) return;
-    setKeySaving(true); setKeyMsg(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/keys`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: selectedProvider, api_key: keyInput.trim() }),
-      });
-      if (!res.ok) throw new Error((await res.json()).detail || "Save failed");
-      // Mirror to localStorage so the key survives backend redeploys
-      // (Render's free tier wipes the DB on every restart).
-      saveLocalKey(selectedProvider, keyInput.trim());
-      setKeyMsg({ type: "ok", text: "API key saved and hot-loaded — no restart needed!" });
-      setKeyInput(""); setShowKeyInput(false);
-      await fetchApiKeys();
-    } catch (err: any) {
-      setKeyMsg({ type: "err", text: err.message || "Failed to save key." });
-    } finally {
-      setKeySaving(false);
-    }
-  };
-
-  const handleDeleteKey = async (provider: string) => {
-    try {
-      await fetch(`${API_BASE}/api/keys/${provider}`, { method: "DELETE" });
-      removeLocalKey(provider);
-      await fetchApiKeys();
-      if (selectedProvider === provider) { setKeyInput(""); setKeyMsg(null); }
-    } catch { /* silent */ }
-  };
-
-  const selectedKeyInfo = apiKeys.find((k) => k.provider === selectedProvider);
-
-  // ─── Quick-log a frequent meal (with optional portion override) ────────────
-
-  const handleQuickLog = async (meal: FrequentMeal, portions?: Record<string, number>) => {
-    setQuickLogging(meal.id);
-    setErrorMsg(""); setSuccessMsg("");
-    try {
-      const res = await fetch(`${API_BASE}/api/frequent-meals/${meal.id}/log`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ portions: portions ?? {} }),
-      });
-      if (!res.ok) throw new Error((await res.json()).detail || "Quick-log failed");
-      const data = await res.json();
-      setSuccessMsg(`Quick-logged "${data.display_name}" — ${Math.round(data.macros?.calories ?? 0)} kcal`);
-      setPortionMeal(null);
-      await fetchDashboardData();
-      fetchFrequentMeals();
-      fetchSuggestions();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to quick-log meal.");
-    } finally {
-      setQuickLogging(null);
-    }
-  };
-
-  const openPortionEditor = (meal: FrequentMeal) => {
-    // Pre-fill with current gram values
-    const initial: Record<string, number> = {};
-    meal.ingredients.forEach((ing) => {
-      if (ing.name) initial[ing.name] = ing.grams ?? 100;
-    });
-    setPortionGrams(initial);
-    setPortionMeal(meal);
-  };
-
-  const handleDeleteFrequent = async (mealId: number) => {
-    try {
-      await fetch(`${API_BASE}/api/frequent-meals/${mealId}`, { method: "DELETE", headers: authHeaders() });
-      setFrequentMeals((prev) => prev.filter((m) => m.id !== mealId));
-    } catch { /* silent */ }
-  };
-
-  // ─── Helpers ───────────────────────────────────────────────────────────────
-
-  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
-  const pct = (cur: number, tgt: number) => (!tgt ? 0 : Math.min(Math.round((cur / tgt) * 100), 150));
-  const barColor = (p: number) =>
-    p > 100 ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"
-    : p > 85  ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-    : "bg-purple-600 shadow-[0_0_10px_rgba(147,51,234,0.5)]";
-
-  const toggleMeal = (id: number) =>
-    setExpandedMeals((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
-
-  const macroActual = (perHundred: number, weightG: number) =>
-    Math.round((perHundred * weightG) / 100 * 10) / 10;
-
-  // ─── Render ────────────────────────────────────────────────────────────────
+  const words = ["Whey protein","Brown rice","Greek yogurt","Almonds","Chicken breast","Oats","Peanut butter","Eggs","Sweet potato","Banana"];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-purple-500 selection:text-white pb-16">
-      {/* Background glows */}
-      <div className="absolute top-0 left-1/4 w-[40rem] h-[40rem] bg-purple-900/10 rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute top-1/3 right-1/4 w-[35rem] h-[35rem] bg-indigo-900/10 rounded-full blur-[100px] pointer-events-none" />
+    <div style={{ background: BG, color: "#F4F5EF", fontFamily: "'Hanken Grotesk', sans-serif", overflowX: "hidden", minHeight: "100vh" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0}
+        html{scroll-behavior:smooth}
+        ::-webkit-scrollbar{width:8px}
+        ::-webkit-scrollbar-track{background:#0B0C09}
+        ::-webkit-scrollbar-thumb{background:#26281e;border-radius:4px}
+        ::selection{background:#C9F24D;color:#0B0C09}
+        @keyframes fvUp{from{opacity:0;transform:translateY(34px)}to{opacity:1;transform:none}}
+        @keyframes fvWave{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}
+        @keyframes fvPulse{0%,100%{box-shadow:0 0 0 0 rgba(201,242,77,0.45)}70%{box-shadow:0 0 0 22px rgba(201,242,77,0)}}
+        @keyframes fvFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+        @keyframes fvMarq{to{transform:translateX(-50%)}}
+        .fv-h1{animation:fvUp 1s cubic-bezier(.16,1,.3,1) both}
+        .fv-d1{animation-delay:.05s}.fv-d2{animation-delay:.18s}.fv-d3{animation-delay:.3s}.fv-d4{animation-delay:.42s}
+        [data-reveal]{opacity:0;transform:translateY(40px);transition:opacity .9s cubic-bezier(.16,1,.3,1),transform .9s cubic-bezier(.16,1,.3,1)}
+        .btn-primary{display:inline-flex;align-items:center;gap:9px;background:#C9F24D;border:none;color:#0B0C09;font-size:16px;font-weight:700;cursor:pointer;padding:15px 26px;border-radius:14px;transition:background .15s,transform .1s}
+        .btn-primary:hover{background:#d6fb5f;transform:scale(1.02)}
+        .btn-ghost{display:inline-flex;align-items:center;gap:9px;background:transparent;border:1px solid rgba(255,255,255,0.16);color:#F4F5EF;font-size:16px;font-weight:600;cursor:pointer;padding:15px 22px;border-radius:14px;transition:border-color .15s}
+        .btn-ghost:hover{border-color:rgba(201,242,77,0.5)}
+      `}</style>
 
-      {/* ── Header ── */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-6 md:px-12 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-900/30">
-            <Utensils className="w-5 h-5 text-white" />
+      {/* ── NAV ── */}
+      <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, backdropFilter: "blur(16px)", background: "rgba(11,12,9,0.72)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+        <div style={{ maxWidth: 1240, margin: "0 auto", padding: "0 32px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 9, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <MicIcon size={16} color={BG} />
+            </div>
+            <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>FitVoice</span>
           </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <button onClick={() => router.push("/login")} style={{ background: "none", border: "none", color: "#C8CABF", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "8px 12px" }}>Sign in</button>
+            <button onClick={() => router.push("/login")} style={{ background: ACCENT, border: "none", color: BG, fontSize: 14, fontWeight: 700, cursor: "pointer", padding: "10px 18px", borderRadius: 11 }}>Get started</button>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <section style={{ position: "relative", padding: "148px 32px 80px", maxWidth: 1240, margin: "0 auto" }}>
+        <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", width: 780, height: 520, background: "radial-gradient(ellipse at center,rgba(201,242,77,0.10),transparent 70%)", pointerEvents: "none", filter: "blur(20px)" }} />
+        <div style={{ position: "relative", display: "grid", gridTemplateColumns: "1.05fr 0.95fr", gap: 56, alignItems: "center" }}>
           <div>
-            <h1 className="text-xl font-bold tracking-tight bg-gradient-to-r from-purple-400 via-indigo-200 to-cyan-200 bg-clip-text text-transparent flex items-center gap-1.5">
-              FitVoice <span className="text-[10px] font-semibold tracking-widest text-purple-400 border border-purple-500/30 bg-purple-500/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
+            <div className="fv-h1 fv-d1" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(201,242,77,0.10)", border: "1px solid rgba(201,242,77,0.28)", borderRadius: 100, padding: "6px 14px", fontSize: 12, fontWeight: 600, color: ACCENT, letterSpacing: "0.02em", marginBottom: 28 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: ACCENT, display: "inline-block" }} />
+              Voice-first macro tracking
+            </div>
+            <h1 className="fv-h1 fv-d1" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: "clamp(48px,6vw,74px)", lineHeight: 0.96, letterSpacing: "-0.03em", marginBottom: 24 }}>
+              Just say<br />what you<br /><span style={{ color: ACCENT }}>ate.</span>
             </h1>
-            <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
-            <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
-            <span className="text-slate-300">Streak:</span>
-            <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
-          </div>
-
-          {/* API Keys button */}
-          <button
-            onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition"
-            title="Manage API Keys"
-          >
-            <KeyRound className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">API Keys</span>
-            {apiKeys.filter((k) => !k.is_set).length > 0 && (
-              <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                {apiKeys.filter((k) => !k.is_set).length} missing
-              </span>
-            )}
-          </button>
-
-          {/* Brand preferences button */}
-          <button
-            onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition"
-            title="Brand Preferences"
-          >
-            <BookMarked className="w-4 h-4 text-purple-400" />
-            <span className="hidden sm:inline">Brands</span>
-            {brandPrefs.length > 0 && (
-              <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
-            )}
-          </button>
-
-          {/* Progress / history page */}
-          <button
-            onClick={() => router.push("/progress")}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white transition"
-            title="View Progress"
-          >
-            <BarChart2 className="w-4 h-4 text-cyan-400" />
-            <span className="hidden sm:inline">Progress</span>
-          </button>
-
-          <button
-            onClick={() => setShowConfig(true)}
-            className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
-            title="Configure Targets"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
-            title={`Sign out (${getStoredUser()?.username ?? ""})`}
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
-
-      {/* ── Main grid ── */}
-      <main className="max-w-7xl mx-auto px-4 md:px-8 mt-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-        {/* Global messages */}
-        {(errorMsg || successMsg) && (
-          <div className="lg:col-span-12 space-y-3">
-            {errorMsg && (
-              <div className="bg-red-950/30 border border-red-500/20 text-red-300 p-4 rounded-xl flex items-center gap-3 text-sm shadow-lg backdrop-blur-sm">
-                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0" />
-                <span className="flex-1">{errorMsg}</span>
-                <button onClick={() => setErrorMsg("")} className="text-red-400 hover:text-red-200 font-semibold px-2">×</button>
-              </div>
-            )}
-            {successMsg && (
-              <div className="bg-emerald-950/30 border border-emerald-500/20 text-emerald-300 p-4 rounded-xl flex items-center gap-3 text-sm shadow-lg backdrop-blur-sm">
-                <Check className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                <span className="flex-1 font-medium">{successMsg}</span>
-                <button onClick={() => setSuccessMsg("")} className="text-emerald-400 hover:text-emerald-200 font-semibold px-2">×</button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── Left column: Voice panel ── */}
-        <section className="lg:col-span-5 flex flex-col gap-6">
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 md:p-8 flex flex-col items-center text-center relative overflow-hidden shadow-2xl min-h-[420px]">
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-purple-600/10 rounded-full blur-[40px] pointer-events-none" />
-
-            <div className="w-full flex justify-between items-center z-10">
-              <div className="flex items-center gap-2 bg-purple-950/30 border border-purple-500/15 px-3 py-1 rounded-full text-[10px] text-purple-300 font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400 animate-spin" /> Speech Recognition
-              </div>
-              {isRecording && (
-                <div className="flex items-center gap-1.5 text-red-500 text-xs font-semibold">
-                  <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping mr-1" />
-                  REC {formatTime(recordTime)}
-                </div>
-              )}
-            </div>
-
-            {/* Mic button */}
-            <div className="my-8 flex flex-col items-center justify-center z-10">
-              {isProcessing ? (
-                <div className="w-32 h-32 rounded-full border border-slate-800 bg-slate-950/80 flex items-center justify-center flex-col gap-2 shadow-2xl">
-                  <Loader2 className="w-10 h-10 text-purple-500 animate-spin" />
-                  <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 animate-pulse">Analyzing</span>
-                </div>
-              ) : isRecording ? (
-                <button onClick={stopRecording} className="w-32 h-32 rounded-full bg-gradient-to-tr from-red-600 to-rose-600 hover:scale-105 transition active:scale-95 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.4)] relative cursor-pointer group">
-                  <span className="absolute inset-0 rounded-full bg-red-600/30 animate-ping pointer-events-none" />
-                  <Square className="w-10 h-10 text-white fill-white group-hover:scale-90 transition-transform" />
-                </button>
-              ) : (
-                <button onClick={startRecording} className="w-32 h-32 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-[0_0_40px_rgba(124,58,237,0.3)] hover:shadow-[0_0_60px_rgba(124,58,237,0.5)] cursor-pointer group relative">
-                  <Mic className="w-12 h-12 text-white group-hover:scale-110 transition-transform" />
-                </button>
-              )}
-              <h3 className="mt-6 text-lg font-bold text-slate-100">
-                {isRecording ? "Listening..." : isProcessing ? "Resolving ingredients..." : "Log your meal with voice"}
-              </h3>
-              <p className="mt-2 text-xs text-slate-400 max-w-[280px]">
-                {isRecording
-                  ? "Tap the red button to stop recording."
-                  : isProcessing
-                  ? "Whisper is transcribing and the AI is resolving nutrition data..."
-                  : "Tap the mic and say what you ate. E.g. 'I had 200ml Nandini milk and 2 eggs'."}
-              </p>
-            </div>
-
-            {/* Text confirm form */}
-            <form onSubmit={handleTextSubmit} className="w-full mt-auto pt-6 border-t border-slate-900 flex flex-col gap-4 z-10">
-              <div className="flex flex-col gap-1.5 text-left">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1.5">
-                  <Utensils className="w-3.5 h-3.5 text-purple-400" /> Transcript / Manual Input
-                </label>
-                <textarea
-                  rows={3}
-                  placeholder="Transcribed voice will appear here, or type manually..."
-                  value={textQuery}
-                  onChange={(e) => setTextQuery(e.target.value)}
-                  disabled={isRecording || isProcessing}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-600/80 focus:ring-1 focus:ring-purple-600/20 disabled:opacity-50 resize-none leading-relaxed shadow-inner"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={isRecording || isProcessing || !textQuery.trim()}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:scale-[1.01] active:scale-[0.99] hover:from-purple-500 hover:to-indigo-500 transition-all shadow-lg shadow-purple-950/30 disabled:opacity-40 disabled:hover:scale-100 rounded-xl py-3 text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isProcessing ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Resolving Macros...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4 text-purple-200" /> Confirm, Resolve Macros & Log</>
-                )}
+            <p className="fv-h1 fv-d2" style={{ fontSize: 19, lineHeight: 1.55, color: "#A2A498", maxWidth: 440, marginBottom: 36 }}>
+              Speak a meal out loud and AI resolves the exact macros — by brand, portion and prep. No searching. No weighing in your head. Just talk.
+            </p>
+            <div className="fv-h1 fv-d3" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 30 }}>
+              <button className="btn-primary" onClick={() => router.push("/login")}>
+                Start tracking free <ArrowIcon />
               </button>
-            </form>
-          </div>
-
-          {/* Tips card */}
-          <div className="bg-slate-900/20 border border-slate-900 rounded-2xl p-4 flex gap-3 text-xs text-slate-400">
-            <Dumbbell className="w-5 h-5 text-purple-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-slate-300">Tips</p>
-              <p className="mt-1 leading-normal">
-                Say brand names naturally — "200ml Nandini milk" or "1 scoop Optimum Nutrition whey".
-                Save brand preferences via the <span className="text-purple-400 font-semibold">Brands</span> button to lock in exact label macros forever.
-              </p>
+              <a href="#how" className="btn-ghost">See how it works</a>
+            </div>
+            <div className="fv-h1 fv-d4" style={{ display: "flex", alignItems: "center", gap: 18, fontSize: 13, color: "#6E7066", fontWeight: 500 }}>
+              <CheckItem label="No credit card" />
+              <CheckItem label="Free to start" />
+              <CheckItem label="5-second logs" />
             </div>
           </div>
-        </section>
 
-        {/* ── Right column ── */}
-        <section className="lg:col-span-7 flex flex-col gap-6">
-
-          {/* Dashboard summary */}
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 md:p-8 shadow-2xl">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-purple-400" /> Today's Macros
-                </h2>
-                <p className="text-xs text-slate-500">Logged intake vs. daily targets</p>
-              </div>
-              <div className="text-right">
-                <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Calories</span>
-                <p className="text-lg font-black text-purple-400">{pct(totals.calories, profile.target_calories)}%</p>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className="flex justify-center items-center py-12">
-                <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Calories bar */}
-                <div>
-                  <div className="flex justify-between text-xs font-semibold mb-2">
-                    <span className="text-slate-300">Calories (kcal)</span>
-                    <span className="text-slate-400"><strong className="text-slate-100">{Math.round(totals.calories)}</strong> / {profile.target_calories} kcal</span>
-                  </div>
-                  <div className="w-full bg-slate-950 rounded-full h-3 overflow-hidden border border-slate-850 p-[2px]">
-                    <div className={`h-full rounded-full transition-all duration-700 ${barColor(pct(totals.calories, profile.target_calories))}`} style={{ width: `${pct(totals.calories, profile.target_calories)}%` }} />
-                  </div>
+          {/* voice card */}
+          <div className="fv-h1 fv-d3" style={{ position: "relative" }}>
+            <div style={{ background: "linear-gradient(160deg,#16180F,#0E0F0A)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 26, padding: 28, boxShadow: "0 40px 90px -30px rgba(0,0,0,0.8)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#FF5E5E", display: "inline-block" }} />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#A2A498" }}>Recording</span>
                 </div>
-
-                {/* Sub-macro grid */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
-                  {[
-                    { label: "Protein", key: "protein" as const, target: profile.target_protein, color: "purple", gradient: "from-purple-600 to-indigo-600" },
-                    { label: "Carbs",   key: "carbs"   as const, target: profile.target_carbs,   color: "cyan",   gradient: "from-cyan-600 to-teal-600" },
-                    { label: "Fat",     key: "fat"     as const, target: profile.target_fat,     color: "rose",   gradient: "from-rose-600 to-orange-600" },
-                  ].map(({ label, key, target, color, gradient }) => (
-                    <div key={key} className="bg-slate-950/40 border border-slate-900 rounded-2xl p-4">
-                      <div className="flex justify-between items-center text-xs font-semibold mb-1">
-                        <span className={`text-${color}-300`}>{label}</span>
-                        <span className="text-slate-400">{Math.round(totals[key])}g / {target}g</span>
-                      </div>
-                      <p className={`text-[10px] text-${color}-400 mb-2 font-bold`}>{pct(totals[key], target)}% reached</p>
-                      <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden">
-                        <div className={`bg-gradient-to-r ${gradient} h-full rounded-full transition-all duration-700`} style={{ width: `${pct(totals[key], target)}%` }} />
-                      </div>
-                    </div>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#6E7066" }}>00:04</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 24 }}>
+                <div style={{ width: 60, height: 60, borderRadius: "50%", background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: "fvPulse 2.2s ease-out infinite" }}>
+                  <MicIcon size={24} color={BG} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, height: 54, flex: 1 }}>
+                  {heights.map((h, i) => (
+                    <div key={i} style={{ flex: 1, height: "100%", background: i % 3 === 0 ? ACCENT : "rgba(201,242,77,0.45)", borderRadius: 3, transformOrigin: "center", animation: `fvWave ${0.7 + (i % 5) * 0.12}s ease-in-out ${i * 0.05}s infinite`, transform: `scaleY(${h})` }} />
                   ))}
                 </div>
               </div>
-            )}
-          </div>
-
-          {/* ── Frequent Meals Quick-Log Row ── */}
-          {frequentMeals.length > 0 && (
-            <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-5 shadow-2xl">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-yellow-400" /> Frequent Meals
-                </h2>
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Tap to quick-log</span>
+              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6E7066", marginBottom: 6 }}>You said</p>
+                <p style={{ fontSize: 15, color: "#E8EAE0", lineHeight: 1.4 }}>"Two scrambled eggs, 80 grams of oats and a banana."</p>
               </div>
-              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-800">
-                {frequentMeals.map((meal) => (
-                  <div
-                    key={meal.id}
-                    className="flex-shrink-0 w-44 bg-slate-950/70 border border-slate-800 hover:border-purple-700/50 rounded-2xl p-3 flex flex-col gap-2 group relative transition"
-                  >
-                    {/* Name */}
-                    <p className="text-xs font-semibold text-slate-200 leading-tight line-clamp-2">{meal.display_name}</p>
-
-                    {/* Macros */}
-                    <div className="text-[10px] text-slate-500 flex flex-col gap-0.5">
-                      <span className="text-orange-400 font-bold">{Math.round(meal.macros.calories)} kcal</span>
-                      <span className="text-slate-500">P {meal.macros.protein}g · C {meal.macros.carbs}g · F {meal.macros.fat}g</span>
-                      <span className="text-slate-600">{meal.log_count}× logged</span>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-1.5 mt-auto">
-                      {/* Quick-log (exact portions) */}
-                      <button
-                        onClick={() => handleQuickLog(meal)}
-                        disabled={quickLogging === meal.id}
-                        className="flex-1 flex items-center justify-center gap-1 bg-purple-700/80 hover:bg-purple-600 disabled:opacity-50 rounded-lg py-1.5 text-[10px] font-bold text-white transition cursor-pointer"
-                        title="Log this meal now"
-                      >
-                        {quickLogging === meal.id
-                          ? <Loader2 className="w-3 h-3 animate-spin" />
-                          : <Zap className="w-3 h-3" />}
-                        Log
-                      </button>
-                      {/* Portion editor */}
-                      <button
-                        onClick={() => openPortionEditor(meal)}
-                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition cursor-pointer"
-                        title="Adjust portions before logging"
-                      >
-                        <Sliders className="w-3 h-3" />
-                      </button>
-                      {/* Delete frequent */}
-                      <button
-                        onClick={() => handleDeleteFrequent(meal.id)}
-                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-red-900/40 hover:border-red-800/40 text-slate-500 hover:text-red-400 transition cursor-pointer"
-                        title="Remove from frequent meals"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6E7066", marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: ACCENT }} /> AI resolved
+              </p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[["2 eggs · scrambled","156 kcal · 13P"],["Oats · 80g","303 kcal · 11P"],["Banana · 1 medium","105 kcal · 1P"]].map(([l,r]) => (
+                  <div key={l} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "10px 13px" }}>
+                    <span style={{ fontSize: 14, color: "#E8EAE0" }}>{l}</span>
+                    <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: ACCENT }}>{r}</span>
                   </div>
                 ))}
               </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                <span style={{ fontSize: 13, color: "#8E9085" }}>Total logged</span>
+                <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 22, color: "#F4F5EF" }}>564 <span style={{ fontSize: 13, color: "#8E9085", fontWeight: 500 }}>kcal</span></span>
+              </div>
             </div>
-          )}
-
-          {/* ── Smart Macro Suggestions ── */}
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-5 shadow-2xl">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-indigo-400" /> Smart Suggestions
-                </h2>
-                {suggestionsRemaining && (
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    Remaining: <span className="text-orange-400">{Math.max(0, Math.round(suggestionsRemaining.calories))} kcal</span>
-                    {" · "}<span className="text-purple-400">P {Math.max(0, Math.round(suggestionsRemaining.protein))}g</span>
-                    {" · "}<span className="text-cyan-400">C {Math.max(0, Math.round(suggestionsRemaining.carbs))}g</span>
-                    {" · "}<span className="text-rose-400">F {Math.max(0, Math.round(suggestionsRemaining.fat))}g</span>
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={fetchSuggestions}
-                disabled={suggestionsLoading}
-                className="w-8 h-8 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-indigo-400 transition disabled:opacity-40"
-                title="Refresh suggestions"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${suggestionsLoading ? "animate-spin" : ""}`} />
-              </button>
-            </div>
-
-            {suggestionsLoading && suggestions.length === 0 ? (
-              <div className="flex items-center justify-center py-6 text-slate-500 gap-2 text-xs">
-                <Loader2 className="w-4 h-4 animate-spin" /> Asking Claude for suggestions...
-              </div>
-            ) : suggestions.length === 0 ? (
-              <p className="text-xs text-slate-600 text-center py-4">Log a meal first to get smart suggestions.</p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {suggestions.map((s, i) => (
-                  <div
-                    key={i}
-                    className="bg-slate-950/60 border border-slate-800 hover:border-indigo-700/40 rounded-2xl p-3 flex flex-col gap-2 transition"
-                  >
-                    {/* Score badge */}
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
-                        s.fit_score >= 8 ? "bg-emerald-950/50 border-emerald-500/30 text-emerald-400"
-                        : s.fit_score >= 5 ? "bg-yellow-950/40 border-yellow-500/30 text-yellow-400"
-                        : "bg-slate-800 border-slate-700 text-slate-400"
-                      }`}>
-                        Fit {s.fit_score}/10
-                      </span>
-                      {s.is_frequent && (
-                        <span className="text-[9px] font-bold text-purple-400 flex items-center gap-0.5">
-                          <Zap className="w-2.5 h-2.5" /> Frequent
-                        </span>
-                      )}
-                    </div>
-
-                    <p className="text-xs font-semibold text-slate-200 leading-tight">{s.name}</p>
-                    <p className="text-[10px] text-slate-500 leading-snug">{s.description}</p>
-                    <p className="text-[10px] text-indigo-400 italic leading-snug">"{s.fit_reason}"</p>
-
-                    {/* Macros */}
-                    <div className="flex gap-2 text-[9px] font-mono text-slate-500">
-                      <span className="text-orange-400">{Math.round(s.estimated_macros.calories)} kcal</span>
-                      <span className="text-purple-400">P {s.estimated_macros.protein}g</span>
-                      <span className="text-cyan-400">C {s.estimated_macros.carbs}g</span>
-                    </div>
-
-                    {/* Log This button */}
-                    <button
-                      onClick={() => {
-                        if (s.is_frequent && s.frequent_meal_id) {
-                          const fm = frequentMeals.find((m) => m.id === s.frequent_meal_id);
-                          if (fm) openPortionEditor(fm);
-                        } else {
-                          setTextQuery(s.description);
-                          // scroll to top
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }
-                      }}
-                      className="mt-auto w-full flex items-center justify-center gap-1 bg-indigo-700/80 hover:bg-indigo-600 rounded-xl py-1.5 text-[10px] font-bold text-white transition cursor-pointer"
-                    >
-                      <Zap className="w-3 h-3" />
-                      {s.is_frequent ? "Open Portion Editor" : "Fill & Log"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div style={{ position: "absolute", top: -18, right: -14, background: ACCENT, color: BG, fontWeight: 700, fontSize: 13, padding: "9px 15px", borderRadius: 12, boxShadow: "0 14px 30px -8px rgba(201,242,77,0.5)", animation: "fvFloat 5s ease-in-out infinite" }}>⚡ 4.2s</div>
           </div>
+        </div>
 
-          {/* ── Meal logs ── */}
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col">
-            <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 mb-4">
-              <Calendar className="w-4 h-4 text-purple-400" /> Today's Meals ({meals.length})
-            </h2>
-
-            {loading ? (
-              <div className="flex justify-center items-center py-12 flex-1">
-                <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />
+        {/* marquee */}
+        <div style={{ marginTop: 84, borderTop: "1px solid rgba(255,255,255,0.07)", borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "22px 0", overflow: "hidden", WebkitMaskImage: "linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)", maskImage: "linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)" }}>
+          <div style={{ display: "flex", gap: 48, width: "max-content", animation: "fvMarq 26s linear infinite" }}>
+            {[...words, ...words].map((w, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 48, flexShrink: 0 }}>
+                <span style={{ fontFamily: "'Hanken Grotesk',sans-serif", fontSize: 16, fontWeight: 600, color: "#6E7066", whiteSpace: "nowrap" }}>{w}</span>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: ACCENT, flexShrink: 0 }} />
               </div>
-            ) : meals.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 px-4 text-center border border-dashed border-slate-900 rounded-2xl flex-1">
-                <div className="w-12 h-12 rounded-xl bg-slate-950 border border-slate-900 flex items-center justify-center mb-3">
-                  <Apple className="w-5 h-5 text-slate-600" />
-                </div>
-                <h4 className="text-sm font-bold text-slate-300">No food logged today</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-[240px]">Speak or type your meals above to see them logged here.</p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
-                {meals.map((meal) => {
-                  const isExpanded = expandedMeals.has(meal.id);
-                  return (
-                    <div key={meal.id} className="bg-slate-950/70 border border-slate-900 hover:border-slate-800 rounded-2xl overflow-hidden transition duration-200">
-                      {/* Meal header — always visible */}
-                      <div className="flex items-start gap-2 pr-3">
-                        {/* Expand/collapse toggle — takes up most of the row */}
-                        <button
-                          onClick={() => toggleMeal(meal.id)}
-                          className="flex-1 flex items-start justify-between gap-4 p-4 text-left cursor-pointer min-w-0"
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-200 italic leading-snug truncate">"{meal.raw_transcript}"</p>
-                            <span className="text-[10px] text-slate-500 mt-1 block">
-                              {new Date(meal.date).toLocaleDateString()} · {meal.ingredients.length} ingredient{meal.ingredients.length !== 1 ? "s" : ""}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            {/* Macro pill */}
-                            <div className="bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-right">
-                              <span className="text-xs font-bold text-orange-400 leading-none">{Math.round(meal.macros.calories)} kcal</span>
-                              <div className="flex gap-2 text-[9px] text-slate-400 mt-0.5 font-mono">
-                                <span className="text-purple-400">P {meal.macros.protein}g</span>
-                                <span className="text-cyan-400">C {meal.macros.carbs}g</span>
-                                <span className="text-rose-400">F {meal.macros.fat}g</span>
-                              </div>
-                            </div>
-                            {isExpanded
-                              ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" />
-                              : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
-                          </div>
-                        </button>
-
-                        {/* Delete button — outside the expand toggle so it doesn't trigger expand */}
-                        <button
-                          onClick={() => handleDeleteMeal(meal.id)}
-                          disabled={deletingMealId === meal.id}
-                          className="self-center w-7 h-7 flex-shrink-0 rounded-lg bg-slate-900 hover:bg-red-950/60 border border-slate-800 hover:border-red-800/60 flex items-center justify-center text-slate-600 hover:text-red-400 transition disabled:opacity-40"
-                          title="Delete this meal"
-                        >
-                          {deletingMealId === meal.id
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            : <Trash2 className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-
-                      {/* Ingredient breakdown — expandable */}
-                      {isExpanded && (
-                        <div className="border-t border-slate-900 px-4 pb-4 pt-3 space-y-2">
-                          {/* Column headers */}
-                          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 text-[9px] uppercase tracking-wider font-bold text-slate-600 pb-1 border-b border-slate-900">
-                            <span>Ingredient</span>
-                            <span className="text-right">Weight</span>
-                            <span className="text-right text-orange-500">kcal</span>
-                            <span className="text-right text-purple-400">Protein</span>
-                            <span className="text-right text-cyan-400">Carbs</span>
-                            <span className="text-right text-rose-400">Fat</span>
-                          </div>
-
-                          {meal.ingredients.map((ing, idx) => (
-                            <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center text-xs py-1">
-                              {/* Name + brand */}
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 flex-shrink-0" />
-                                <div className="min-w-0">
-                                  <span className="text-slate-200 font-medium capitalize truncate block">{ing.name}</span>
-                                  {ing.brand && (
-                                    <span className="text-[9px] text-purple-400 flex items-center gap-0.5">
-                                      <Tag className="w-2.5 h-2.5" />{ing.brand}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* Weight */}
-                              <span className="text-slate-500 font-mono text-[10px] text-right">{ing.weight_g}g</span>
-
-                              {/* kcal */}
-                              <span className="text-orange-300 font-mono text-[10px] text-right font-semibold">
-                                {macroActual(ing.calories_per_100g, ing.weight_g)}
-                              </span>
-
-                              {/* Protein */}
-                              <span className="text-purple-300 font-mono text-[10px] text-right">
-                                {macroActual(ing.protein_per_100g, ing.weight_g)}g
-                              </span>
-
-                              {/* Carbs */}
-                              <span className="text-cyan-300 font-mono text-[10px] text-right">
-                                {macroActual(ing.carbs_per_100g, ing.weight_g)}g
-                              </span>
-
-                              {/* Fat */}
-                              <span className="text-rose-300 font-mono text-[10px] text-right">
-                                {macroActual(ing.fat_per_100g, ing.weight_g)}g
-                              </span>
-                            </div>
-                          ))}
-
-                          {/* Totals row */}
-                          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center pt-2 mt-1 border-t border-slate-900">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
-                            <span />
-                            <span className="text-orange-400 font-mono text-[10px] font-bold text-right">{Math.round(meal.macros.calories)}</span>
-                            <span className="text-purple-400 font-mono text-[10px] font-bold text-right">{meal.macros.protein}g</span>
-                            <span className="text-cyan-400 font-mono text-[10px] font-bold text-right">{meal.macros.carbs}g</span>
-                            <span className="text-rose-400 font-mono text-[10px] font-bold text-right">{meal.macros.fat}g</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            ))}
           </div>
-        </section>
-      </main>
+        </div>
+      </section>
 
-      {/* ══ API Keys Modal ═══════════════════════════════════════════════════ */}
-      {showKeysModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl">
-
-            {/* Header */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <KeyRound className="w-5 h-5 text-amber-400" /> API Key Manager
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">Keys are stored in your local SQLite DB and hot-loaded — no restart needed.</p>
+      {/* ── HOW IT WORKS ── */}
+      <section id="how" style={{ padding: "110px 32px", maxWidth: 1240, margin: "0 auto" }}>
+        <div data-reveal style={{ textAlign: "center", marginBottom: 72 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>Three steps</p>
+          <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(32px,4vw,54px)", lineHeight: 1.02, letterSpacing: "-0.03em" }}>From spoken to logged<br />in under five seconds.</h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 22 }}>
+          {[
+            { n:"01", t:"Speak your meal",    d:"Tap the mic and say exactly what you ate — brand, quantity, prep. Or just type it.",          path:"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" },
+            { n:"02", t:"AI resolves macros", d:"The pipeline extracts ingredients, matches your brands and calculates exact macros.",           path:"M12 2a9 9 0 1 0 9 9M12 2v9l6 4" },
+            { n:"03", t:"Track & keep streaks",d:"Daily totals, weekly charts and a 90-day heatmap update the instant you log.",              path:"M3 17l6-6 4 4 8-8M21 7v6h-6" },
+          ].map((s, i) => (
+            <div key={i} data-reveal style={{ background: "linear-gradient(160deg,#17190F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 22, padding: "32px 28px", position: "relative", transitionDelay: `${i * 0.1}s` }}>
+              <span style={{ position: "absolute", top: 26, right: 28, fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 800, fontSize: 40, color: "rgba(201,242,77,0.13)", lineHeight: 1 }}>{s.n}</span>
+              <div style={{ width: 52, height: 52, borderRadius: 15, background: "rgba(201,242,77,0.12)", border: "1px solid rgba(201,242,77,0.28)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 22 }}>
+                <svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d={s.path} /></svg>
               </div>
-              <button onClick={() => setShowKeysModal(false)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition">
-                <X className="w-4 h-4" />
-              </button>
+              <h3 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 22, marginBottom: 10, letterSpacing: "-0.01em" }}>{s.t}</h3>
+              <p style={{ fontSize: 15, color: "#A2A498", lineHeight: 1.55 }}>{s.d}</p>
             </div>
+          ))}
+        </div>
+      </section>
 
-            <div className="p-6 space-y-5">
-
-              {/* Provider status overview */}
-              <div className="grid grid-cols-1 gap-2">
-                {apiKeys.map((k) => (
-                  <div key={k.provider} className={`flex items-center justify-between rounded-xl border px-4 py-3 transition ${k.is_set ? "bg-slate-950/60 border-slate-800" : "bg-amber-950/20 border-amber-500/20"}`}>
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${k.is_set ? "bg-emerald-400" : "bg-amber-400 animate-pulse"}`} />
-                      <div>
-                        <p className="text-xs font-semibold text-slate-200">{k.label}</p>
-                        <p className="text-[10px] text-slate-500">{k.description}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {k.is_set ? (
-                        <>
-                          <span className="text-[10px] font-mono text-slate-500">{k.masked_key}</span>
-                          <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-                            <ShieldCheck className="w-2.5 h-2.5" /> Set
-                          </span>
-                          <button onClick={() => handleDeleteKey(k.provider)} className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-red-900/40 flex items-center justify-center text-slate-500 hover:text-red-400 transition" title="Remove key">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-[9px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-full">
-                          {PROVIDER_BADGES[k.provider]}
-                        </span>
-                      )}
-                    </div>
+      {/* ── VOICE FEATURE ── */}
+      <section style={{ background: "#0E0F0A", borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+          <div data-reveal>
+            <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>The voice engine</p>
+            <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,3.5vw,48px)", lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 22 }}>Talking is faster<br />than typing.</h2>
+            <p style={{ fontSize: 17, lineHeight: 1.6, color: "#A2A498", marginBottom: 32, maxWidth: 460 }}>Real-time transcription captures exactly what you said, then an AI pipeline resolves brands, portion sizes and prep methods into precise macros — filling gaps from the web when it needs to.</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {[
+                { t:"Brand-aware",    d:"Knows your usual whey, your rice, your peanut butter." },
+                { t:"Portion smart",  d:'"A handful", "80 grams", "one medium" — all understood.' },
+                { t:"Fills the gaps", d:"Pulls missing nutrition data from the web automatically." },
+              ].map((p) => (
+                <div key={p.t} style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: 7, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                    <svg width={13} height={13} viewBox="0 0 24 24" fill="none" stroke={BG} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
                   </div>
-                ))}
-              </div>
-
-              {/* Divider */}
-              <div className="border-t border-slate-800" />
-
-              {/* Add / Update key form */}
-              <form onSubmit={handleSaveKey} className="space-y-4">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Add or Update a Key</p>
-
-                {/* Provider dropdown */}
-                <div className="relative">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Select LLM / Service</label>
-                  <button
-                    type="button"
-                    onClick={() => setProviderDropOpen((p) => !p)}
-                    className="w-full flex items-center justify-between bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-xl px-4 py-2.5 text-xs text-left transition focus:outline-none focus:border-amber-500"
-                  >
-                    {selectedProvider ? (
-                      <span className="flex items-center gap-2">
-                        <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${PROVIDER_COLORS[selectedProvider]}`} />
-                        <span className="text-slate-100 font-medium">{selectedKeyInfo?.label}</span>
-                        <span className="text-slate-500 text-[10px]">({selectedKeyInfo?.env_key})</span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-500">Choose a provider...</span>
-                    )}
-                    <CaretDown className={`w-4 h-4 text-slate-500 transition-transform ${providerDropOpen ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {providerDropOpen && (
-                    <div className="absolute z-10 mt-1 w-full bg-slate-900 border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
-                      {apiKeys.map((k) => (
-                        <button
-                          key={k.provider}
-                          type="button"
-                          onClick={() => { setSelectedProvider(k.provider); setProviderDropOpen(false); setKeyInput(""); setKeyMsg(null); }}
-                          className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-800 transition text-left"
-                        >
-                          <span className={`w-2.5 h-2.5 rounded-full bg-gradient-to-r flex-shrink-0 ${PROVIDER_COLORS[k.provider]}`} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-slate-200">{k.label}</p>
-                            <p className="text-[10px] text-slate-500 truncate">{k.env_key}</p>
-                          </div>
-                          {k.is_set && <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Key input — only shown after provider selected */}
-                {selectedProvider && (
                   <div>
-                    <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      {selectedKeyInfo?.env_key}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showKeyInput ? "text" : "password"}
-                        required
-                        placeholder={`Paste your ${selectedKeyInfo?.label} key here...`}
-                        value={keyInput}
-                        onChange={(e) => setKeyInput(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 pr-10 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-amber-500 font-mono"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowKeyInput((p) => !p)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition"
-                      >
-                        {showKeyInput ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-slate-600 mt-1">{selectedKeyInfo?.description}</p>
+                    <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 3 }}>{p.t}</p>
+                    <p style={{ fontSize: 14, color: "#8E9085", lineHeight: 1.45 }}>{p.d}</p>
                   </div>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={keySaving || !selectedProvider || !keyInput.trim()}
-                  className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 disabled:opacity-40 disabled:hover:scale-100 rounded-xl py-2.5 text-xs font-bold text-white flex items-center justify-center gap-2 transition"
-                >
-                  {keySaving
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</>
-                    : <><ShieldCheck className="w-4 h-4" /> Save API Key</>}
-                </button>
-              </form>
-
-              {/* Feedback */}
-              {keyMsg && (
-                <div className={`rounded-xl p-3 flex items-start gap-2 text-xs ${keyMsg.type === "ok" ? "bg-emerald-950/30 border border-emerald-500/20 text-emerald-300" : "bg-red-950/30 border border-red-500/20 text-red-300"}`}>
-                  {keyMsg.type === "ok" ? <Check className="w-4 h-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
-                  {keyMsg.text}
                 </div>
-              )}
+              ))}
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ══ Brand Preferences Modal ══════════════════════════════════════════ */}
-      {showBrandModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
-
-            {/* Modal header */}
-            <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <BookMarked className="w-5 h-5 text-purple-400" /> Brand Preferences
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Save brand-specific macros. The AI will use these automatically every time you log that ingredient.
-                </p>
-              </div>
-              <button onClick={() => setShowBrandModal(false)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-6 space-y-6">
-
-              {/* Tabs */}
-              <div className="flex bg-slate-950 rounded-xl p-1 gap-1">
-                <button
-                  onClick={() => { setBrandTab("name"); setBrandMsg(null); setExtractedMacros(null); setXlsxMsg(null); }}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "name" ? "bg-purple-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  <Tag className="w-3.5 h-3.5" /> By Name
-                </button>
-                <button
-                  onClick={() => { setBrandTab("label"); setBrandMsg(null); setExtractedMacros(null); setXlsxMsg(null); }}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "label" ? "bg-purple-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  <Upload className="w-3.5 h-3.5" /> Label
-                </button>
-                <button
-                  onClick={() => { setBrandTab("excel"); setBrandMsg(null); setXlsxMsg(null); }}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${brandTab === "excel" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"}`}
-                >
-                  <Plus className="w-3.5 h-3.5" /> Excel
-                </button>
-              </div>
-
-              {/* ── Tab: By Name ── */}
-              {brandTab === "name" && (
-                <form onSubmit={handleSaveBrandByName} className="space-y-4">
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Enter the ingredient and your preferred brand. The AI will fetch its nutritional data the next time you log it — or immediately on your next meal entry.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Ingredient</label>
-                      <input
-                        type="text" required placeholder="e.g. milk"
-                        value={prefIngredient} onChange={(e) => setPrefIngredient(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Brand</label>
-                      <input
-                        type="text" required placeholder="e.g. Nandini toned"
-                        value={prefBrand} onChange={(e) => setPrefBrand(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
-                      />
-                    </div>
-                  </div>
-                  <button
-                    type="submit" disabled={brandSaving}
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 rounded-xl py-2.5 text-xs font-bold text-white flex items-center justify-center gap-2 transition"
-                  >
-                    {brandSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Plus className="w-4 h-4" /> Save Preference</>}
-                  </button>
-                </form>
-              )}
-
-              {/* ── Tab: Upload Label ── */}
-              {brandTab === "label" && (
-                <form onSubmit={handleSaveBrandByLabel} className="space-y-4">
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Photo the nutrition facts panel on the back of the pack. Claude will read the exact values and save them — no more guessing.
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Ingredient</label>
-                      <input
-                        type="text" required placeholder="e.g. milk"
-                        value={prefIngredient} onChange={(e) => setPrefIngredient(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">Brand</label>
-                      <input
-                        type="text" required placeholder="e.g. Nandini toned"
-                        value={prefBrand} onChange={(e) => setPrefBrand(e.target.value)}
-                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Image upload area */}
-                  <div
-                    onClick={() => labelInputRef.current?.click()}
-                    className="relative border-2 border-dashed border-slate-700 hover:border-purple-500 rounded-2xl p-4 flex flex-col items-center justify-center gap-2 cursor-pointer transition min-h-[140px]"
-                  >
-                    {labelPreview ? (
-                      <img src={labelPreview} alt="Label preview" className="max-h-32 rounded-lg object-contain" />
-                    ) : (
-                      <>
-                        <Upload className="w-8 h-8 text-slate-600" />
-                        <p className="text-xs text-slate-500 text-center">Click to upload nutrition label photo<br /><span className="text-[10px] text-slate-600">JPG, PNG or WEBP</span></p>
-                      </>
-                    )}
-                    <input ref={labelInputRef} type="file" accept="image/*" className="hidden" onChange={handleLabelFileChange} />
-                  </div>
-
-                  {/* Extracted macros preview */}
-                  {extractedMacros && (
-                    <div className="bg-emerald-950/30 border border-emerald-500/20 rounded-xl p-3 grid grid-cols-4 gap-2 text-center">
-                      {[
-                        { label: "kcal", key: "calories_per_100g", color: "text-orange-400" },
-                        { label: "Protein", key: "protein_per_100g", color: "text-purple-400" },
-                        { label: "Carbs",   key: "carbs_per_100g",   color: "text-cyan-400" },
-                        { label: "Fat",     key: "fat_per_100g",     color: "text-rose-400" },
-                      ].map(({ label, key, color }) => (
-                        <div key={key}>
-                          <p className={`text-sm font-bold ${color}`}>{extractedMacros[key]}</p>
-                          <p className="text-[9px] text-slate-500 uppercase tracking-wider">{label}/100g</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="submit" disabled={brandSaving || !labelFile}
-                    className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 rounded-xl py-2.5 text-xs font-bold text-white flex items-center justify-center gap-2 transition"
-                  >
-                    {brandSaving ? <><Loader2 className="w-4 h-4 animate-spin" /> Extracting...</> : <><Sparkles className="w-4 h-4" /> Extract & Save Label</>}
-                  </button>
-                </form>
-              )}
-
-              {/* Feedback message */}
-              {brandMsg && (
-                <div className={`rounded-xl p-3 flex items-start gap-2 text-xs ${brandMsg.type === "ok" ? "bg-emerald-950/30 border border-emerald-500/20 text-emerald-300" : "bg-red-950/30 border border-red-500/20 text-red-300"}`}>
-                  {brandMsg.type === "ok" ? <Check className="w-4 h-4 flex-shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
-                  {brandMsg.text}
+          <div data-reveal style={{ transitionDelay: "0.12s" }}>
+            <div style={{ background: "linear-gradient(160deg,#17190F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 24, padding: 30 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 26 }}>
+                <div style={{ width: 46, height: 46, borderRadius: 13, background: "rgba(201,242,77,0.12)", border: "1px solid rgba(201,242,77,0.28)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <MicIcon size={20} color={ACCENT} />
                 </div>
-              )}
-
-              {/* Saved preferences list */}
-              {brandPrefs.length > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Saved Preferences</p>
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {brandPrefs.map((p) => (
-                      <div key={p.ingredient_name} className="flex items-center justify-between bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
-                        <div className="flex items-center gap-2 text-xs">
-                          <Tag className="w-3.5 h-3.5 text-purple-400 flex-shrink-0" />
-                          <span className="text-slate-300 font-medium capitalize">{p.ingredient_name}</span>
-                          <span className="text-slate-600">→</span>
-                          <span className="text-purple-300 capitalize">{p.preferred_brand}</span>
-                        </div>
-                        <button
-                          onClick={() => handleDeletePref(p.ingredient_name)}
-                          className="w-6 h-6 rounded-lg bg-slate-800 hover:bg-red-900/40 flex items-center justify-center text-slate-500 hover:text-red-400 transition"
-                          title="Remove preference"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ── Tab: Excel Import / Export ── */}
-              {brandTab === "excel" && (
-                <div className="space-y-5">
-                  <p className="text-xs text-slate-400 leading-relaxed">
-                    Download your current brand preferences as a spreadsheet, edit it offline,
-                    then re-upload to restore or bulk-add preferences in one go.
-                  </p>
-
-                  {/* Hidden file input for import */}
-                  <input
-                    ref={xlsxInputRef}
-                    type="file"
-                    accept=".xlsx"
-                    className="hidden"
-                    onChange={handleImportExcel}
-                  />
-
-                  {/* Export card */}
-                  <div className="bg-slate-950/60 border border-emerald-900/40 rounded-2xl p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <span className="text-emerald-400">↓</span> Download Preferences
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Exports all {brandPrefs.length} saved brand{brandPrefs.length !== 1 ? "s" : ""} with their nutrition data
-                        as a styled .xlsx file.
-                      </p>
-                    </div>
-                    <button
-                      onClick={handleExportExcel}
-                      disabled={brandPrefs.length === 0}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-xs font-bold transition shadow"
-                    >
-                      <Plus className="w-3.5 h-3.5 rotate-45" /> Export .xlsx
-                    </button>
-                  </div>
-
-                  {/* Import card */}
-                  <div className="bg-slate-950/60 border border-purple-900/40 rounded-2xl p-4 flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                        <span className="text-purple-400">↑</span> Upload &amp; Restore
-                      </p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">
-                        Upload a .xlsx file in the same format to bulk-set preferences
-                        and nutrition data in one step.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => xlsxInputRef.current?.click()}
-                      disabled={xlsxImporting}
-                      className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white text-xs font-bold transition shadow"
-                    >
-                      {xlsxImporting
-                        ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Importing...</>
-                        : <><Upload className="w-3.5 h-3.5" /> Import .xlsx</>}
-                    </button>
-                  </div>
-
-                  {/* Format reminder */}
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Expected columns</p>
-                    <div className="grid grid-cols-6 gap-1 text-[9px] text-center">
-                      {["Ingredient", "Brand", "Calories/100g", "Protein/100g", "Carbs/100g", "Fat/100g"].map((h, i) => (
-                        <div key={h} className={`px-1 py-1 rounded font-mono font-bold ${i < 2 ? "bg-purple-950/60 text-purple-300 border border-purple-900/40" : "bg-slate-950 text-slate-400 border border-slate-800"}`}>
-                          {h}
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-[10px] text-slate-600 mt-2">
-                      Columns A–B are required. C–F are optional — fill them to also update the ingredient cache.
-                    </p>
-                  </div>
-
-                  {/* Feedback */}
-                  {xlsxMsg && (
-                    <div className={`rounded-xl p-3 flex items-start gap-2 text-xs ${xlsxMsg.type === "ok" ? "bg-emerald-950/30 border border-emerald-500/20 text-emerald-300" : "bg-red-950/30 border border-red-500/20 text-red-300"}`}>
-                      {xlsxMsg.type === "ok"
-                        ? <Check className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                        : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />}
-                      {xlsxMsg.text}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {brandPrefs.length === 0 && brandTab !== "excel" && (
-                <p className="text-xs text-slate-600 text-center py-2">No brand preferences saved yet.</p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══ Portion Editor Modal ═════════════════════════════════════════════ */}
-      {portionMeal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4 overflow-y-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl">
-            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-purple-400" /> Adjust Portions
-                </h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">{portionMeal.display_name}</p>
+                <div><p style={{ fontWeight: 700, fontSize: 15 }}>Live transcription</p><p style={{ fontSize: 13, color: "#8E9085" }}>Near-zero latency</p></div>
               </div>
-              <button onClick={() => setPortionMeal(null)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="p-5 space-y-3">
-              {portionMeal.ingredients.map((ing) => {
-                const name = ing.name || "";
-                const grams = portionGrams[name] ?? ing.grams ?? 100;
-                return (
-                  <div key={name} className="flex items-center gap-3">
-                    <span className="flex-1 text-xs text-slate-300 font-medium capitalize">{name}</span>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        min={1}
-                        value={grams}
-                        onChange={(e) => setPortionGrams((prev) => ({ ...prev, [name]: Number(e.target.value) }))}
-                        className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 text-right focus:outline-none focus:border-purple-500"
-                      />
-                      <span className="text-[10px] text-slate-500 w-4">g</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {["Captures your speech as you talk","Splits the meal into ingredients","Matches your preferred brands automatically"].map((t, i) => (
+                  <React.Fragment key={i}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#6E7066", paddingTop: 2 }}>0{i+1}</span>
+                      <p style={{ fontSize: 15, color: "#C8CABF", lineHeight: 1.4 }}>{t}</p>
                     </div>
-                  </div>
-                );
-              })}
-
-              {/* Preview scaled macros */}
-              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3 mt-2">
-                <p className="text-[9px] uppercase font-bold text-slate-600 mb-2 tracking-wider">Estimated macros with these portions</p>
-                {(() => {
-                  let cal = 0, pro = 0, crb = 0, fat = 0;
-                  portionMeal.ingredients.forEach((ing) => {
-                    const name = ing.name || "";
-                    const newG = portionGrams[name] ?? ing.grams ?? 100;
-                    const oldG = ing.grams ?? 100;
-                    const ratio = oldG > 0 ? newG / oldG : 1;
-                    cal += (ing.calories ?? 0) * ratio;
-                    pro += (ing.protein  ?? 0) * ratio;
-                    crb += (ing.carbs    ?? 0) * ratio;
-                    fat += (ing.fat      ?? 0) * ratio;
-                  });
-                  return (
-                    <div className="flex gap-3 text-[10px] font-mono">
-                      <span className="text-orange-400">{Math.round(cal)} kcal</span>
-                      <span className="text-purple-400">P {Math.round(pro)}g</span>
-                      <span className="text-cyan-400">C {Math.round(crb)}g</span>
-                      <span className="text-rose-400">F {Math.round(fat)}g</span>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  onClick={() => setPortionMeal(null)}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => handleQuickLog(portionMeal, portionGrams)}
-                  disabled={quickLogging === portionMeal.id}
-                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 transition flex items-center justify-center gap-2"
-                >
-                  {quickLogging === portionMeal.id
-                    ? <><Loader2 className="w-4 h-4 animate-spin" /> Logging...</>
-                    : <><Zap className="w-4 h-4" /> Log with These Portions</>}
-                </button>
+                    {i < 2 && <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />}
+                  </React.Fragment>
+                ))}
+                <div style={{ background: "rgba(201,242,77,0.07)", border: "1px solid rgba(201,242,77,0.2)", borderRadius: 13, padding: 14, marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: ACCENT }}>Macros resolved</span>
+                  <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 13, color: ACCENT }}>100%</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-      )}
+      </section>
 
-      {/* ══ Settings Modal ═══════════════════════════════════════════════════ */}
-      {showConfig && (
-        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex justify-center items-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl relative">
-            <div className="p-6 border-b border-slate-800/80 flex items-center justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-purple-400" /> Adjust Macro Targets
-                </h3>
-                <p className="text-xs text-slate-500">Customize your daily nutrition goals</p>
+      {/* ── STREAK HEATMAP ── */}
+      <section style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+        <div data-reveal>
+          <div style={{ background: "linear-gradient(160deg,#17190F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 24, padding: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
+              <div><p style={{ fontWeight: 700, fontSize: 15 }}>90-day overview</p><p style={{ fontSize: 13, color: "#8E9085" }}>Every day you hit your goal</p></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 7, background: "rgba(255,138,76,0.12)", border: "1px solid rgba(255,138,76,0.28)", borderRadius: 100, padding: "6px 13px" }}>
+                <svg width={14} height={14} viewBox="0 0 24 24" fill="#FF8A4C"><path d="M12 2c1 3-1 5-1 7a3 3 0 0 0 6 0c0-1 0-2-1-3 2 1 4 4 4 8a8 8 0 0 1-16 0c0-4 4-7 5-9 1 2 2 2 3-3Z" /></svg>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#FF8A4C" }}>12-day streak</span>
               </div>
-              <button onClick={() => setShowConfig(false)} className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white transition">
-                <X className="w-4 h-4" />
-              </button>
             </div>
-
-            <form onSubmit={handleProfileUpdate} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1.5">Your Name</label>
-                <input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
-              </div>
-
-              {/* STT Engine toggle — only shown in non-production / local dev environments */}
-              {sttSettings?.allow_local_choice && (
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Mic className="w-3.5 h-3.5 text-purple-400" /> Speech-to-Text Engine
-                    </label>
-                    <span className="text-[9px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Dev only</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    Choose how voice recordings are transcribed on this machine. This option is hidden in production — deployed apps always use the cloud engine.
-                  </p>
-                  <div className="space-y-1.5">
-                    {sttSettings.modes.map((m) => (
-                      <label
-                        key={m.value}
-                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${sttSettings.current_mode === m.value ? "bg-purple-950/30 border-purple-500/40" : "bg-slate-900/50 border-slate-800 hover:border-slate-700"}`}
-                      >
-                        <input
-                          type="radio"
-                          name="stt-mode"
-                          checked={sttSettings.current_mode === m.value}
-                          onChange={() => handleSttModeChange(m.value)}
-                          disabled={sttSaving}
-                          className="mt-0.5 accent-purple-600"
-                        />
-                        <div>
-                          <p className="text-[11px] font-semibold text-slate-200">{m.label}</p>
-                          <p className="text-[10px] text-slate-500 leading-snug">{m.description}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
+            <div style={{ display: "grid", gridTemplateRows: "repeat(7,1fr)", gridAutoFlow: "column", gap: 5, marginBottom: 18 }}>{heatCells}</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7, fontSize: 11, color: "#6E7066", marginBottom: 20 }}>
+              Less {pal.map((c,i)=><span key={i} style={{ width:12,height:12,borderRadius:3,background:c }} />)} More
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
+              {[["12","#FF8A4C","Current streak"],["28",ACCENT,"Best streak"],["76","#F4F5EF","Days logged"]].map(([v,c,l])=>(
+                <div key={l} style={{ background: "rgba(255,255,255,0.03)", borderRadius: 13, padding: 14, textAlign: "center" }}>
+                  <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 26, color: c }}>{v}</p>
+                  <p style={{ fontSize: 11, color: "#8E9085", marginTop: 2 }}>{l}</p>
                 </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Calories Goal (kcal)</label>
-                  <input type="number" required min={1} value={editCalories} onChange={(e) => setEditCalories(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Protein Goal (g)</label>
-                  <input type="number" required min={1} value={editProtein} onChange={(e) => setEditProtein(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Carbs Goal (g)</label>
-                  <input type="number" required min={1} value={editCarbs} onChange={(e) => setEditCarbs(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">Fat Goal (g)</label>
-                  <input type="number" required min={1} value={editFat} onChange={(e) => setEditFat(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-purple-500" />
-                </div>
-              </div>
-              <div className="pt-4 border-t border-slate-800 flex justify-end gap-3 text-xs font-bold">
-                <button type="button" onClick={() => setShowConfig(false)} className="text-slate-400 hover:text-slate-200 px-4 py-2.5 rounded-xl transition cursor-pointer">Cancel</button>
-                <button type="submit" className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:scale-[1.02] active:scale-[0.98] transition px-5 py-2.5 rounded-xl text-white shadow-lg shadow-purple-900/30 cursor-pointer">Save Targets</button>
-              </div>
-            </form>
+              ))}
+            </div>
           </div>
         </div>
-      )}
+        <div data-reveal style={{ transitionDelay: "0.12s" }}>
+          <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>Streaks</p>
+          <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,3.5vw,48px)", lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 22 }}>Consistency you<br />can actually see.</h2>
+          <p style={{ fontSize: 17, lineHeight: 1.6, color: "#A2A498", maxWidth: 440, marginBottom: 30 }}>A GitHub-style heatmap turns every logged day into a square. Watch the grid fill, keep the streak alive, and let the satisfying chain of green do the motivating for you.</p>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "16px 20px" }}>
+              <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 30, color: ACCENT }}>23</p>
+              <p style={{ fontSize: 13, color: "#8E9085" }}>Avg streak length</p>
+            </div>
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, padding: "16px 20px" }}>
+              <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 30, color: "#F4F5EF" }}>71<span style={{ fontSize: 18, color: "#8E9085" }}>%</span></p>
+              <p style={{ fontSize: 13, color: "#8E9085" }}>Stick past week one</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── STATS ── */}
+      <section ref={statsRef} style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px" }}>
+        <div data-reveal style={{ textAlign: "center", marginBottom: 60 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>By the numbers</p>
+          <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,4vw,54px)", lineHeight: 1.02, letterSpacing: "-0.03em" }}>Precision that adds up.</h2>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20 }}>
+          {[
+            { val: fmt(counts.cal),   color: ACCENT,    label: "Avg daily calories tracked" },
+            { val: fmt(counts.prot)+"g", color:"#F4F5EF", label: "Avg protein logged / day" },
+            { val: fmt(counts.meals)+"+", color:"#F4F5EF",label: "Meals resolved by AI" },
+            { val: fmt(counts.users)+"+", color: ACCENT,  label: "Active trackers" },
+          ].map((s) => (
+            <div key={s.label} style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 20, padding: "30px 26px" }}>
+              <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 800, fontSize: 46, color: s.color, letterSpacing: "-0.02em" }}>{s.val}</p>
+              <p style={{ fontSize: 14, color: "#8E9085", marginTop: 6 }}>{s.label}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── TESTIMONIAL ── */}
+      <section style={{ maxWidth: 880, margin: "0 auto", padding: "40px 32px 110px" }}>
+        <div data-reveal style={{ background: "linear-gradient(160deg,#16180F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 26, padding: "56px 48px", textAlign: "center", position: "relative" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: 4, marginBottom: 22 }}>
+            {Array.from({length:5}).map((_,i)=>(
+              <svg key={i} width={20} height={20} viewBox="0 0 24 24" fill={ACCENT}><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.8 5.9 20.4l1.4-6.8L2.2 9l6.9-.7L12 2z" /></svg>
+            ))}
+          </div>
+          <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 600, fontSize: "clamp(18px,2.2vw,28px)", lineHeight: 1.32, letterSpacing: "-0.02em", color: "#F4F5EF", marginBottom: 30 }}>
+            "I've tried every macro tracker. FitVoice is the first one I actually use every day — because I just <span style={{ color: ACCENT }}>talk</span> to it."
+          </p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
+            <div style={{ width: 42, height: 42, borderRadius: "50%", background: ACCENT, color: BG, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>A</div>
+            <div style={{ textAlign: "left" }}>
+              <p style={{ fontWeight: 700, fontSize: 15 }}>Aarav M.</p>
+              <p style={{ fontSize: 13, color: "#8E9085" }}>Lifts 5x a week · 76-day streak</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section style={{ position: "relative", padding: "120px 32px", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 900, height: 440, background: "radial-gradient(ellipse at center,rgba(201,242,77,0.12),transparent 70%)", pointerEvents: "none", filter: "blur(20px)" }} />
+        <div data-reveal style={{ position: "relative", maxWidth: 720, margin: "0 auto", textAlign: "center" }}>
+          <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 800, fontSize: "clamp(36px,5vw,68px)", lineHeight: 0.98, letterSpacing: "-0.03em", marginBottom: 24 }}>
+            Your macros,<br /><span style={{ color: ACCENT }}>resolved.</span>
+          </h2>
+          <p style={{ fontSize: 19, color: "#A2A498", marginBottom: 38, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>Speak a meal and see exact macros in under five seconds. Free to start, no setup required.</p>
+          <button className="btn-primary" style={{ fontSize: 17, padding: "18px 34px", borderRadius: 15 }} onClick={() => router.push("/login")}>
+            Start tracking free <ArrowIcon size={19} />
+          </button>
+          <p style={{ fontSize: 14, color: "#6E7066", marginTop: 18 }}>
+            Already have an account?{" "}
+            <span style={{ color: ACCENT, cursor: "pointer", fontWeight: 600 }} onClick={() => router.push("/login")}>Sign in →</span>
+          </p>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "34px 32px" }}>
+        <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <MicIcon size={14} color={BG} />
+            </div>
+            <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 15 }}>FitVoice</span>
+          </div>
+          <p style={{ fontSize: 13, color: "#5E6056" }}>© 2026 FitVoice · Speak it. Track it. Keep the streak.</p>
+        </div>
+      </footer>
     </div>
+  );
+}
+
+// ── Inline SVG helpers ────────────────────────────────────────────────────────
+
+function MicIcon({ size = 24, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+function ArrowIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round">
+      <line x1="5" y1="12" x2="19" y2="12" />
+      <polyline points="12 5 19 12 12 19" />
+    </svg>
+  );
+}
+
+function CheckItem({ label }: { label: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="#C9F24D" strokeWidth={3} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      {label}
+    </span>
   );
 }

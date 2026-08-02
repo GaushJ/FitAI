@@ -2,14 +2,10 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Utensils, Sparkles, Loader2, AlertCircle, Eye, EyeOff,
-  User, Lock, ArrowRight, UserPlus, LogIn,
-} from "lucide-react";
+import { Loader2, AlertCircle, Eye, EyeOff, User, Lock, ArrowRight, UserPlus, LogIn } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-// ── Auth token helpers (shared with main page) ────────────────────────────────
 export const AUTH_TOKEN_KEY = "fitvoice_auth_token";
 export const AUTH_USER_KEY  = "fitvoice_auth_user";
 
@@ -26,27 +22,22 @@ export const clearAuth = () => {
   localStorage.removeItem(AUTH_USER_KEY);
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 type Tab = "login" | "signup";
 
 export default function LoginPage() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("login");
 
-  // Redirect if already logged in
   useEffect(() => {
-    if (getStoredToken()) router.replace("/");
+    if (getStoredToken()) router.replace("/dashboard");
   }, [router]);
 
-  // ── Login state
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginLoading,  setLoginLoading]  = useState(false);
   const [loginError,    setLoginError]    = useState("");
   const [showLoginPwd,  setShowLoginPwd]  = useState(false);
 
-  // ── Signup state
   const [signupName,     setSignupName]     = useState("");
   const [signupUsername, setSignupUsername] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -67,7 +58,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Login failed.");
       storeAuth(data.access_token, data.user);
-      router.replace("/");
+      router.replace("/dashboard");
     } catch (err: any) {
       setLoginError(err.message || "Network error. Is the backend running?");
     } finally {
@@ -78,27 +69,19 @@ export default function LoginPage() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setSignupError("");
-    if (signupPassword !== signupConfirm) {
-      setSignupError("Passwords do not match."); return;
-    }
-    if (signupPassword.length < 6) {
-      setSignupError("Password must be at least 6 characters."); return;
-    }
+    if (signupPassword !== signupConfirm) { setSignupError("Passwords do not match."); return; }
+    if (signupPassword.length < 6) { setSignupError("Password must be at least 6 characters."); return; }
     setSignupLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: signupUsername.trim().toLowerCase(),
-          password: signupPassword,
-          name: signupName.trim(),
-        }),
+        body: JSON.stringify({ username: signupUsername.trim().toLowerCase(), password: signupPassword, name: signupName.trim() }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Signup failed.");
       storeAuth(data.access_token, data.user);
-      router.replace("/");
+      router.replace("/dashboard");
     } catch (err: any) {
       setSignupError(err.message || "Network error. Is the backend running?");
     } finally {
@@ -106,210 +89,120 @@ export default function LoginPage() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col items-center justify-center px-4 selection:bg-purple-500 selection:text-white relative overflow-hidden">
+  const inputCls = "w-full bg-[#0B0C09] border border-white/[0.09] rounded-xl pl-10 pr-4 py-3 text-sm text-[#F4F5EF] placeholder:text-[#6E7066] focus:outline-none focus:border-[#C9F24D]/60 focus:ring-1 focus:ring-[#C9F24D]/20 transition";
 
-      {/* Background glows */}
-      <div className="absolute top-0 left-1/4 w-[40rem] h-[40rem] bg-purple-900/15 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-0 right-1/4 w-[35rem] h-[35rem] bg-indigo-900/10 rounded-full blur-[100px] pointer-events-none" />
+  return (
+    <div style={{ minHeight: "100vh", background: "#0B0C09", color: "#F4F5EF", fontFamily: "'Hanken Grotesk', sans-serif", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 16px", position: "relative", overflow: "hidden" }}>
+
+      {/* Glows */}
+      <div style={{ position: "absolute", top: 0, left: "25%", width: "40rem", height: "40rem", background: "radial-gradient(ellipse,rgba(201,242,77,0.07),transparent 70%)", borderRadius: "50%", filter: "blur(60px)", pointerEvents: "none" }} />
+      <div style={{ position: "absolute", bottom: 0, right: "20%", width: "30rem", height: "30rem", background: "radial-gradient(ellipse,rgba(201,242,77,0.05),transparent 70%)", borderRadius: "50%", filter: "blur(60px)", pointerEvents: "none" }} />
 
       {/* Logo */}
-      <div className="flex flex-col items-center gap-3 mb-10 z-10">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center shadow-2xl shadow-purple-900/40">
-          <Utensils className="w-8 h-8 text-white" />
-        </div>
-        <div className="text-center">
-          <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-purple-400 via-indigo-200 to-cyan-200 bg-clip-text text-transparent flex items-center justify-center gap-2">
-            FitVoice
-            <span className="text-[10px] font-semibold tracking-widest text-purple-400 border border-purple-500/30 bg-purple-500/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">Voice-driven macro tracking with AI</p>
-        </div>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 32, position: "relative" }}>
+        <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
+          <div style={{ width: 36, height: 36, borderRadius: 11, background: "#C9F24D", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <MicIcon />
+          </div>
+          <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em", color: "#F4F5EF" }}>FitVoice</span>
+        </a>
+        <p style={{ fontSize: 13, color: "#8E9085" }}>Voice-driven macro tracking with AI</p>
       </div>
 
       {/* Card */}
-      <div className="w-full max-w-md bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-3xl shadow-2xl z-10 overflow-hidden">
+      <div style={{ width: "100%", maxWidth: 420, background: "linear-gradient(160deg,#16180F,#0E0F0A)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 24, overflow: "hidden", boxShadow: "0 40px 80px -20px rgba(0,0,0,0.7)", position: "relative" }}>
 
-        {/* Tab switcher */}
-        <div className="flex border-b border-slate-800">
+        {/* Tabs */}
+        <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           {(["login", "signup"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setLoginError(""); setSignupError(""); }}
-              className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition ${
-                tab === t
-                  ? "text-purple-400 border-b-2 border-purple-500 bg-purple-950/20"
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
+              style={{
+                flex: 1, padding: "16px 0", fontSize: 13, fontWeight: 700,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                background: "none", border: "none", cursor: "pointer", transition: "color .15s",
+                color: tab === t ? "#C9F24D" : "#8E9085",
+                borderBottom: tab === t ? "2px solid #C9F24D" : "2px solid transparent",
+              }}
             >
-              {t === "login" ? <LogIn className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+              {t === "login" ? <LogIn size={14} /> : <UserPlus size={14} />}
               {t === "login" ? "Sign In" : "Create Account"}
             </button>
           ))}
         </div>
 
-        <div className="p-8">
+        <div style={{ padding: "28px 28px 32px" }}>
 
-          {/* ── LOGIN FORM ── */}
+          {/* LOGIN */}
           {tab === "login" && (
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Username</label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="text"
-                    required
-                    autoFocus
-                    placeholder="your_username"
-                    value={loginUsername}
-                    onChange={(e) => setLoginUsername(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 transition"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type={showLoginPwd ? "text" : "password"}
-                    required
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 transition"
-                  />
-                  <button type="button" onClick={() => setShowLoginPwd((p) => !p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition">
-                    {showLoginPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {loginError && (
-                <div className="bg-red-950/40 border border-red-500/20 text-red-300 rounded-xl p-3 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {loginError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loginLoading}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 rounded-xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 transition shadow-lg shadow-purple-950/40"
-              >
-                {loginLoading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Signing in...</>
-                  : <><ArrowRight className="w-4 h-4" /> Sign In</>}
-              </button>
-
-              <p className="text-center text-xs text-slate-500">
-                No account yet?{" "}
+            <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              <Field label="Username">
+                <User size={15} color="#8E9085" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type="text" required autoFocus placeholder="your_username" value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Password">
+                <Lock size={15} color="#8E9085" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type={showLoginPwd ? "text" : "password"} required placeholder="••••••••" value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)} className={inputCls} style={{ paddingRight: 40 }} />
+                <button type="button" onClick={() => setShowLoginPwd((p) => !p)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6E7066" }}>
+                  {showLoginPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </Field>
+              {loginError && <ErrorMsg text={loginError} />}
+              <SubmitBtn loading={loginLoading} label="Sign In" loadingLabel="Signing in..." icon={<ArrowRight size={15} />} />
+              <p style={{ textAlign: "center", fontSize: 12, color: "#8E9085" }}>
+                No account?{" "}
                 <button type="button" onClick={() => setTab("signup")}
-                  className="text-purple-400 hover:text-purple-300 font-semibold transition">
+                  style={{ background: "none", border: "none", color: "#C9F24D", fontWeight: 600, cursor: "pointer", fontSize: 12 }}>
                   Create one →
                 </button>
               </p>
             </form>
           )}
 
-          {/* ── SIGNUP FORM ── */}
+          {/* SIGNUP */}
           {tab === "signup" && (
-            <form onSubmit={handleSignup} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Display Name</label>
-                <div className="relative">
-                  <Sparkles className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-purple-400" />
-                  <input
-                    type="text"
-                    required
-                    autoFocus
-                    placeholder="Gaurav"
-                    value={signupName}
-                    onChange={(e) => setSignupName(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 transition"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Username</label>
-                <div className="relative">
-                  <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="text"
-                    required
-                    placeholder="gaurav_fit"
-                    value={signupUsername}
-                    onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 transition font-mono"
-                  />
-                </div>
-                <p className="text-[10px] text-slate-600">Lowercase letters, numbers, underscores only.</p>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type={showSignupPwd ? "text" : "password"}
-                    required
-                    placeholder="Min 6 characters"
-                    value={signupPassword}
-                    onChange={(e) => setSignupPassword(e.target.value)}
-                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/70 focus:ring-1 focus:ring-purple-500/20 transition"
-                  />
-                  <button type="button" onClick={() => setShowSignupPwd((p) => !p)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition">
-                    {showSignupPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Confirm Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                  <input
-                    type="password"
-                    required
-                    placeholder="••••••••"
-                    value={signupConfirm}
-                    onChange={(e) => setSignupConfirm(e.target.value)}
-                    className={`w-full bg-slate-950/80 border rounded-xl pl-10 pr-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-1 transition ${
-                      signupConfirm && signupPassword !== signupConfirm
-                        ? "border-red-500/50 focus:border-red-500 focus:ring-red-500/20"
-                        : "border-slate-800 focus:border-purple-500/70 focus:ring-purple-500/20"
-                    }`}
-                  />
-                </div>
-                {signupConfirm && signupPassword !== signupConfirm && (
-                  <p className="text-[10px] text-red-400">Passwords don't match.</p>
-                )}
-              </div>
-
-              {signupError && (
-                <div className="bg-red-950/40 border border-red-500/20 text-red-300 rounded-xl p-3 text-xs flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" /> {signupError}
-                </div>
+            <form onSubmit={handleSignup} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <Field label="Display Name">
+                <User size={15} color="#C9F24D" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type="text" required autoFocus placeholder="Your Name" value={signupName}
+                  onChange={(e) => setSignupName(e.target.value)} className={inputCls} />
+              </Field>
+              <Field label="Username">
+                <User size={15} color="#8E9085" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type="text" required placeholder="your_handle" value={signupUsername}
+                  onChange={(e) => setSignupUsername(e.target.value.toLowerCase().replace(/\s+/g, "_"))}
+                  className={inputCls} style={{ fontFamily: "'JetBrains Mono', monospace" }} />
+              </Field>
+              <Field label="Password">
+                <Lock size={15} color="#8E9085" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type={showSignupPwd ? "text" : "password"} required placeholder="Min 6 characters" value={signupPassword}
+                  onChange={(e) => setSignupPassword(e.target.value)} className={inputCls} style={{ paddingRight: 40 }} />
+                <button type="button" onClick={() => setShowSignupPwd((p) => !p)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#6E7066" }}>
+                  {showSignupPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </Field>
+              <Field label="Confirm Password">
+                <Lock size={15} color="#8E9085" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+                <input type="password" required placeholder="••••••••" value={signupConfirm}
+                  onChange={(e) => setSignupConfirm(e.target.value)}
+                  className={inputCls}
+                  style={{ borderColor: signupConfirm && signupPassword !== signupConfirm ? "rgba(239,68,68,0.5)" : undefined }} />
+              </Field>
+              {signupConfirm && signupPassword !== signupConfirm && (
+                <p style={{ fontSize: 11, color: "#f87171", marginTop: -8 }}>Passwords don't match.</p>
               )}
-
-              <button
-                type="submit"
-                disabled={signupLoading || (!!signupConfirm && signupPassword !== signupConfirm)}
-                className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 rounded-xl py-3.5 text-sm font-bold text-white flex items-center justify-center gap-2 transition shadow-lg shadow-purple-950/40"
-              >
-                {signupLoading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating account...</>
-                  : <><UserPlus className="w-4 h-4" /> Create Account</>}
-              </button>
-
-              <p className="text-center text-xs text-slate-500">
+              {signupError && <ErrorMsg text={signupError} />}
+              <SubmitBtn loading={signupLoading} label="Create Account" loadingLabel="Creating..." icon={<UserPlus size={15} />}
+                disabled={!!signupConfirm && signupPassword !== signupConfirm} />
+              <p style={{ textAlign: "center", fontSize: 12, color: "#8E9085" }}>
                 Already have an account?{" "}
                 <button type="button" onClick={() => setTab("login")}
-                  className="text-purple-400 hover:text-purple-300 font-semibold transition">
+                  style={{ background: "none", border: "none", color: "#C9F24D", fontWeight: 600, cursor: "pointer", fontSize: 12 }}>
                   Sign in →
                 </button>
               </p>
@@ -318,9 +211,46 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <p className="mt-6 text-[10px] text-slate-700 z-10">
-        Your data is private and never shared.
-      </p>
+      <p style={{ marginTop: 24, fontSize: 11, color: "#3A3D2E" }}>Your data is private and never shared.</p>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "#6E7066" }}>{label}</label>
+      <div style={{ position: "relative" }}>{children}</div>
+    </div>
+  );
+}
+
+function ErrorMsg({ text }: { text: string }) {
+  return (
+    <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171", borderRadius: 12, padding: "10px 14px", fontSize: 12, display: "flex", alignItems: "flex-start", gap: 8 }}>
+      <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} /> {text}
+    </div>
+  );
+}
+
+function SubmitBtn({ loading, label, loadingLabel, icon, disabled }: { loading: boolean; label: string; loadingLabel: string; icon: React.ReactNode; disabled?: boolean }) {
+  return (
+    <button type="submit" disabled={loading || disabled}
+      style={{ width: "100%", background: "#C9F24D", border: "none", color: "#0B0C09", fontSize: 14, fontWeight: 700, cursor: loading || disabled ? "not-allowed" : "pointer", padding: "14px 0", borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "background .15s, opacity .15s", opacity: loading || disabled ? 0.5 : 1 }}
+      onMouseEnter={(e) => { if (!loading && !disabled) (e.currentTarget as HTMLButtonElement).style.background = "#D4F56A"; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#C9F24D"; }}
+    >
+      {loading ? <><Loader2 size={15} className="animate-spin" /> {loadingLabel}</> : <>{icon} {label}</>}
+    </button>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#0B0C09" strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="22" />
+    </svg>
   );
 }

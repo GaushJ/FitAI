@@ -1,4 +1,4 @@
-import os
+﻿import os
 import re
 import io
 import json
@@ -9,7 +9,7 @@ import datetime
 import anthropic
 from contextlib import asynccontextmanager
 from typing import Optional, List
-from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, Depends, HTTPException, Form, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -32,6 +32,7 @@ from database import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from stt_worker import transcribe_audio
+from llm_provider import set_request_key
 from graph_engine import compiled_graph
 
 # ── Environment detection ─────────────────────────────────────────────────────
@@ -82,9 +83,7 @@ async def get_current_user(
 # ── Supported API providers ───────────────────────────────────────────────────
 SUPPORTED_PROVIDERS = {
     "anthropic": {"label": "Anthropic Claude",  "env_key": "ANTHROPIC_API_KEY",  "description": "Used for ingredient extraction, macro resolution & label vision (required)"},
-    "openai":    {"label": "OpenAI",             "env_key": "OPENAI_API_KEY",     "description": "Alternative LLM for extraction and resolution"},
-    "groq":      {"label": "Groq",               "env_key": "GROQ_API_KEY",       "description": "Ultra-fast Whisper API for speech-to-text"},
-    "gemini":    {"label": "Google Gemini",      "env_key": "GEMINI_API_KEY",     "description": "Google's multimodal LLM alternative"},
+    "groq":      {"label": "Groq",              "env_key": "GROQ_API_KEY",       "description": "Ultra-fast Whisper API for speech-to-text"},
     "tavily":    {"label": "Tavily Search",      "env_key": "TAVILY_API_KEY",     "description": "Web search fallback for unknown ingredients"},
 }
 
@@ -95,10 +94,6 @@ async def lifespan(app: FastAPI):
     os.makedirs("temp_audio", exist_ok=True)
     from database import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
-        keys = await get_all_api_keys(session)
-        for k in keys:
-            if k.provider in SUPPORTED_PROVIDERS:
-                os.environ[SUPPORTED_PROVIDERS[k.provider]["env_key"]] = k.api_key
         if IS_PRODUCTION:
             os.environ["STT_MODE"] = "cloud"
         else:
@@ -148,6 +143,10 @@ class UserUpdateSchema(BaseModel):
 class BrandPreferenceSchema(BaseModel):
     ingredient_name: str
     preferred_brand: str
+    calories_per_100g: Optional[float] = None
+    protein_per_100g: Optional[float] = None
+    carbs_per_100g: Optional[float] = None
+    fat_per_100g: Optional[float] = None
 
 class APIKeySchema(BaseModel):
     provider: str
@@ -304,12 +303,13 @@ async def get_dashboard(
 async def transcribe_only(
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
+    x_groq_key: Optional[str] = Header(None),
 ):
     temp_file_path = f"temp_audio/uploaded_{datetime.datetime.now().timestamp()}_{file.filename}"
     try:
         with open(temp_file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        transcript = transcribe_audio(temp_file_path)
+        transcript = transcribe_audio(temp_file_path, groq_api_key=x_groq_key or "")
         return {"status": "success", "transcript": transcript}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to transcribe audio")
@@ -383,14 +383,17 @@ async def track_meal(
     text: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    x_anthropic_key: Optional[str] = Header(None),
+    x_groq_key: Optional[str] = Header(None),
 ):
+    set_request_key(x_anthropic_key or "")
     transcript = ""
     if file:
         temp_file_path = f"temp_audio/uploaded_{datetime.datetime.now().timestamp()}_{file.filename}"
         try:
             with open(temp_file_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
-            transcript = transcribe_audio(temp_file_path)
+            transcript = transcribe_audio(temp_file_path, groq_api_key=x_groq_key or "")
         except Exception as e:
             raise HTTPException(status_code=500, detail="Failed to process or transcribe audio")
         finally:
@@ -413,6 +416,19 @@ async def track_meal(
     resolved_ingredients = final_state.get("resolved_ingredients", [])
     total_meal_macros    = final_state.get("total_meal_macros", {})
 
+    # Warn the user if any ingredients fell back to generic estimates
+    fallback_items = [
+        r["name"] for r in resolved_ingredients
+        if r.get("resolution_source") == "generic_fallback"
+    ]
+    warning = None
+    if fallback_items:
+        names = ", ".join(f'"{n}"' for n in fallback_items)
+        warning = (
+            f"Macros for {names} could not be found online and were estimated. "
+            "For accurate tracking, add them manually via Brand Preferences."
+        )
+
     streak = await update_user_streak(db, user_id=current_user.id)
 
     food_log = DailyFoodLog(
@@ -434,6 +450,7 @@ async def track_meal(
         "streak": streak,
         "ingredients": resolved_ingredients,
         "macros": total_meal_macros,
+        "warning": warning,
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -739,6 +756,7 @@ async def delete_frequent_meal(
 async def suggest_meals(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    x_anthropic_key: Optional[str] = Header(None),
 ):
     """
     Computes today's remaining macros and asks Claude to suggest 3 meals that
@@ -823,18 +841,21 @@ Reply with ONLY a valid JSON array of 3 objects, no markdown, no explanation:
 ]"""
 
     try:
-        client = anthropic.Anthropic()
+        api_key = x_anthropic_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
-        # Strip potential markdown fences
         raw = re.sub(r"^```[a-z]*\n?", "", raw)
         raw = re.sub(r"\n?```$", "", raw)
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        raw = m.group() if m else raw
         suggestions: List[dict] = json.loads(raw)
     except Exception as e:
+        print(f"[suggest-meals] ERROR: {e}")
         # Return a graceful fallback so the UI doesn't break
         suggestions = [
             {
@@ -860,12 +881,87 @@ Reply with ONLY a valid JSON array of 3 objects, no markdown, no explanation:
 @app.get("/api/brand-preferences")
 async def list_brand_preferences(db: AsyncSession = Depends(get_db)):
     prefs = await get_brand_preferences(db)
-    return [{"ingredient_name": p.ingredient_name, "preferred_brand": p.preferred_brand} for p in prefs]
+    result = []
+    for p in prefs:
+        # Look up cached macros for this ingredient+brand pair
+        cache_res = await db.execute(
+            select(IngredientCache).where(
+                IngredientCache.name == p.ingredient_name,
+                IngredientCache.brand == p.preferred_brand,
+            ).limit(1)
+        )
+        cache = cache_res.scalar_one_or_none()
+        entry = {
+            "ingredient_name": p.ingredient_name,
+            "preferred_brand": p.preferred_brand,
+            "calories_per_100g": cache.calories_per_100g if cache else None,
+            "protein_per_100g": cache.protein_per_100g if cache else None,
+            "carbs_per_100g": cache.carbs_per_100g if cache else None,
+            "fat_per_100g": cache.fat_per_100g if cache else None,
+        }
+        result.append(entry)
+    return result
 
 @app.post("/api/brand-preferences")
 async def upsert_brand_preference(payload: BrandPreferenceSchema, db: AsyncSession = Depends(get_db)):
     pref = await set_brand_preference(db, payload.ingredient_name, payload.preferred_brand)
+    # If macro data was provided, also upsert the ingredient cache
+    if any(v is not None for v in [payload.calories_per_100g, payload.protein_per_100g, payload.carbs_per_100g, payload.fat_per_100g]):
+        name_l = payload.ingredient_name.strip().lower()
+        brand_l = payload.preferred_brand.strip().lower()
+        cache_res = await db.execute(
+            select(IngredientCache).where(IngredientCache.name == name_l, IngredientCache.brand == brand_l).limit(1)
+        )
+        cache = cache_res.scalar_one_or_none()
+        if cache:
+            cache.calories_per_100g = payload.calories_per_100g or cache.calories_per_100g
+            cache.protein_per_100g  = payload.protein_per_100g  or cache.protein_per_100g
+            cache.carbs_per_100g    = payload.carbs_per_100g    or cache.carbs_per_100g
+            cache.fat_per_100g      = payload.fat_per_100g      or cache.fat_per_100g
+        else:
+            db.add(IngredientCache(
+                name=name_l, brand=brand_l,
+                calories_per_100g=payload.calories_per_100g or 0,
+                protein_per_100g=payload.protein_per_100g or 0,
+                carbs_per_100g=payload.carbs_per_100g or 0,
+                fat_per_100g=payload.fat_per_100g or 0,
+            ))
+        await db.commit()
     return {"status": "success", "ingredient_name": pref.ingredient_name, "preferred_brand": pref.preferred_brand}
+
+class MacroUpdateSchema(BaseModel):
+    calories_per_100g: float
+    protein_per_100g: float
+    carbs_per_100g: float
+    fat_per_100g: float
+
+@app.patch("/api/brand-preferences/{ingredient_name}/macros")
+async def update_preference_macros(ingredient_name: str, payload: MacroUpdateSchema, db: AsyncSession = Depends(get_db)):
+    name_l = ingredient_name.strip().lower()
+    pref_res = await db.execute(select(BrandPreference).where(BrandPreference.ingredient_name == name_l))
+    pref = pref_res.scalar_one_or_none()
+    if not pref:
+        raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
+    brand_l = pref.preferred_brand
+    cache_res = await db.execute(
+        select(IngredientCache).where(IngredientCache.name == name_l, IngredientCache.brand == brand_l).limit(1)
+    )
+    cache = cache_res.scalar_one_or_none()
+    if cache:
+        cache.calories_per_100g = payload.calories_per_100g
+        cache.protein_per_100g  = payload.protein_per_100g
+        cache.carbs_per_100g    = payload.carbs_per_100g
+        cache.fat_per_100g      = payload.fat_per_100g
+    else:
+        db.add(IngredientCache(
+            name=name_l, brand=brand_l,
+            calories_per_100g=payload.calories_per_100g,
+            protein_per_100g=payload.protein_per_100g,
+            carbs_per_100g=payload.carbs_per_100g,
+            fat_per_100g=payload.fat_per_100g,
+        ))
+    await db.commit()
+    return {"status": "updated", "ingredient_name": name_l}
 
 @app.delete("/api/brand-preferences/{ingredient_name}")
 async def remove_brand_preference(ingredient_name: str, db: AsyncSession = Depends(get_db)):
@@ -1078,12 +1174,14 @@ async def set_brand_from_label(
     preferred_brand: str = Form(...),
     image: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    x_anthropic_key: Optional[str] = Header(None),
 ):
     """Extract macros from a nutrition label photo via Claude vision and persist them."""
     image_data = await image.read()
     image_b64  = base64.b64encode(image_data).decode()
     media_type = image.content_type or "image/jpeg"
-    client = anthropic.Anthropic()
+    api_key = x_anthropic_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    client = anthropic.Anthropic(api_key=api_key)
 
     try:
         response = client.messages.create(
@@ -1140,43 +1238,14 @@ async def set_brand_from_label(
 # API KEY MANAGEMENT (global — no auth)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def mask_key(key: str) -> str:
-    if len(key) <= 8:
-        return "••••••••"
-    return key[:4] + "••••••••" + key[-4:]
-
 @app.get("/api/keys")
-async def list_api_keys(db: AsyncSession = Depends(get_db)):
-    saved  = {k.provider: k.api_key for k in await get_all_api_keys(db)}
-    result = []
-    for provider, meta in SUPPORTED_PROVIDERS.items():
-        key = saved.get(provider) or os.environ.get(meta["env_key"], "")
-        result.append({
-            "provider": provider, "label": meta["label"],
-            "description": meta["description"], "env_key": meta["env_key"],
-            "is_set": bool(key), "masked_key": mask_key(key) if key else "",
-        })
-    return result
+async def list_api_keys():
+    "Returns supported providers. Keys are stored in browser localStorage only."
+    return [
+        {"provider": p, "label": m["label"], "description": m["description"]}
+        for p, m in SUPPORTED_PROVIDERS.items()
+    ]
 
-@app.post("/api/keys")
-async def upsert_api_key(payload: APIKeySchema, db: AsyncSession = Depends(get_db)):
-    if payload.provider not in SUPPORTED_PROVIDERS:
-        raise HTTPException(status_code=400, detail=f"Unknown provider '{payload.provider}'")
-    await save_api_key(db, payload.provider, payload.api_key)
-    os.environ[SUPPORTED_PROVIDERS[payload.provider]["env_key"]] = payload.api_key
-    return {"status": "saved", "provider": payload.provider, "masked_key": mask_key(payload.api_key)}
-
-@app.delete("/api/keys/{provider}")
-async def remove_api_key(provider: str, db: AsyncSession = Depends(get_db)):
-    if provider not in SUPPORTED_PROVIDERS:
-        raise HTTPException(status_code=400, detail=f"Unknown provider '{provider}'")
-    deleted = await delete_api_key(db, provider)
-    if not deleted:
-        raise HTTPException(status_code=404, detail=f"No saved key for '{provider}'")
-    os.environ.pop(SUPPORTED_PROVIDERS[provider]["env_key"], None)
-    return {"status": "deleted", "provider": provider}
-
-# ─────────────────────────────────────────────────────────────────────────────
 # STT MODE SETTINGS (dev-only toggle, no auth required)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1206,3 +1275,4 @@ async def update_stt_settings(payload: STTModeSchema, db: AsyncSession = Depends
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

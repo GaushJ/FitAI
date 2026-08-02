@@ -67,7 +67,7 @@ def _load_local_model():
     return _local_model
 
 
-def _transcribe_with_groq(file_path: str) -> str:
+def _transcribe_with_groq(file_path: str, api_key: str = "") -> str:
     """
     Sends the audio file to Groq's hosted Whisper endpoint
     (OpenAI-compatible API, model: whisper-large-v3).
@@ -78,7 +78,7 @@ def _transcribe_with_groq(file_path: str) -> str:
     """
     from groq import Groq
 
-    api_key = os.environ.get("GROQ_API_KEY")
+    api_key = api_key or os.environ.get("GROQ_API_KEY", "")
     if not api_key:
         raise RuntimeError("GROQ_API_KEY not set")
 
@@ -116,13 +116,13 @@ def _mock_transcript(file_path: str) -> str:
     return "I ate 200g of chicken breast, 100g of white rice, and 150g of oats"
 
 
-def transcribe_audio(file_path: str) -> str:
+def transcribe_audio(file_path: str, groq_api_key: str = "") -> str:
     """
     Transcribes an incoming audio file path according to the active STT_MODE:
 
       "cloud" → Groq API only (errors bubble into the mock fallback)
       "local" → Local faster-whisper model only
-      "auto"  → Try Groq first (if a key is configured), then local, then mock
+      "auto"  → Try Groq first (if a key is provided), then local, then mock
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Audio file not found at {file_path}")
@@ -133,7 +133,7 @@ def transcribe_audio(file_path: str) -> str:
     # ── CLOUD ONLY ───────────────────────────────────────────────────────────
     if mode == "cloud":
         try:
-            text = _transcribe_with_groq(file_path)
+            text = _transcribe_with_groq(file_path, groq_api_key)
             if text:
                 print(f"[STT] Transcribed via Groq API: '{text}'")
                 return text
@@ -153,9 +153,9 @@ def transcribe_audio(file_path: str) -> str:
         return _mock_transcript(file_path)
 
     # ── AUTO (default): cloud preferred, local fallback ─────────────────────
-    if os.environ.get("GROQ_API_KEY"):
+    if groq_api_key:
         try:
-            text = _transcribe_with_groq(file_path)
+            text = _transcribe_with_groq(file_path, groq_api_key)
             if text:
                 print(f"[STT] Transcribed via Groq API: '{text}'")
                 return text
