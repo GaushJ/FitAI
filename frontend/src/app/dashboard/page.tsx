@@ -46,6 +46,7 @@ interface BrandPref {
   protein_per_100g?: number | null;
   carbs_per_100g?: number | null;
   fat_per_100g?: number | null;
+  unit?: "g" | "ml";
 }
 
 interface APIKeyInfo {
@@ -199,9 +200,11 @@ export default function Dashboard() {
   const [prefBrand, setPrefBrand]         = useState("");
   const [labelFile, setLabelFile]         = useState<File | null>(null);
   const [labelPreview, setLabelPreview]   = useState("");
+  const [labelUnit, setLabelUnit]         = useState<"g" | "ml">("g");
   const [brandSaving, setBrandSaving]     = useState(false);
   const [brandMsg, setBrandMsg]           = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [extractedMacros, setExtractedMacros] = useState<Record<string, number> | null>(null);
+  const [extractedUnit, setExtractedUnit] = useState<"g" | "ml">("g");
 
   // ── Brand name-tab: auto-fetched & editable macros
   const [fetchedMacros, setFetchedMacros] = useState<{ calories: string; protein: string; carbs: string; fat: string } | null>(null);
@@ -210,6 +213,7 @@ export default function Dashboard() {
   // inline edit for existing saved prefs
   const [editingPref, setEditingPref]     = useState<string | null>(null);
   const [editMacros, setEditMacros]       = useState({ calories: "", protein: "", carbs: "", fat: "" });
+  const [editBrand, setEditBrand]         = useState("");
   const [macroSaving, setMacroSaving]     = useState(false);
   const [macroMsg, setMacroMsg]           = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
@@ -482,7 +486,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${API_BASE}/api/resolve-ingredient`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...apiKeyHeaders() },
+        headers: { "Content-Type": "application/json", ...authHeaders(), ...apiKeyHeaders() },
         body: JSON.stringify({ name: ingredient.trim(), brand: brand.trim(), weight_g: 100 }),
       });
       if (!res.ok) throw new Error("Fetch failed");
@@ -504,24 +508,41 @@ export default function Dashboard() {
   const handleSaveMacrosForPref = async (ingredientName: string) => {
     setMacroSaving(true); setMacroMsg(null);
     try {
-      const body = {
+      const nameChanged  = editName.trim().toLowerCase()  !== ingredientName.toLowerCase();
+      const brandChanged = editBrand.trim().toLowerCase() !== brandPrefs.find(p => p.ingredient_name === ingredientName)?.preferred_brand?.toLowerCase();
+
+      // Rename if name or brand changed
+      if (nameChanged || brandChanged) {
+        const renameRes = await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(ingredientName)}/rename`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ new_ingredient_name: editName.trim(), new_brand: editBrand.trim() }),
+        });
+        if (!renameRes.ok) throw new Error("Rename failed");
+      }
+
+      // Save macros if any are filled in
+      const macroBody = {
         calories_per_100g: parseFloat(editMacros.calories),
         protein_per_100g:  parseFloat(editMacros.protein),
         carbs_per_100g:    parseFloat(editMacros.carbs),
         fat_per_100g:      parseFloat(editMacros.fat),
       };
-      if (Object.values(body).some(isNaN)) throw new Error("All four values must be numbers.");
-      const res = await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(ingredientName)}/macros`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      setMacroMsg({ type: "ok", text: "Macros saved." });
+      if (!Object.values(macroBody).some(isNaN)) {
+        const targetName = nameChanged ? editName.trim() : ingredientName;
+        const macroRes = await fetch(`${API_BASE}/api/brand-preferences/${encodeURIComponent(targetName)}/macros`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(macroBody),
+        });
+        if (!macroRes.ok) throw new Error("Macro save failed");
+      }
+
+      setMacroMsg({ type: "ok", text: "Saved." });
       setEditingPref(null);
       await fetchBrandPrefs();
     } catch (err: any) {
-      setMacroMsg({ type: "err", text: err.message || "Failed to save macros." });
+      setMacroMsg({ type: "err", text: err.message || "Failed to save." });
     } finally {
       setMacroSaving(false);
     }
@@ -569,13 +590,15 @@ export default function Dashboard() {
     fd.append("ingredient_name", prefIngredient.trim());
     fd.append("preferred_brand", prefBrand.trim());
     fd.append("image", labelFile);
+    fd.append("unit", labelUnit);
     try {
       const res = await fetch(`${API_BASE}/api/brand-preferences/label`, { method: "POST", body: fd, headers: apiKeyHeaders() });
       if (!res.ok) throw new Error((await res.json()).detail || "Extraction failed");
       const data = await res.json();
       setExtractedMacros(data.macros);
+      setExtractedUnit((data.unit as "g" | "ml") || "g");
       setBrandMsg({ type: "ok", text: `Label read! Exact macros for "${prefBrand} ${prefIngredient}" saved permanently.` });
-      setPrefIngredient(""); setPrefBrand(""); setLabelFile(null); setLabelPreview("");
+      setPrefIngredient(""); setPrefBrand(""); setLabelFile(null); setLabelPreview(""); setLabelUnit("g");
       await fetchBrandPrefs();
     } catch (err: any) {
       setBrandMsg({ type: "err", text: err.message || "Failed to extract label." });
@@ -1500,6 +1523,21 @@ export default function Dashboard() {
                     </div>
                   </div>
 
+                  {/* Unit toggle */}
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Unit</span>
+                    <div className="flex rounded-lg overflow-hidden border border-slate-700">
+                      {(["g", "ml"] as const).map((u) => (
+                        <button
+                          key={u} type="button"
+                          onClick={() => setLabelUnit(u)}
+                          className={`px-3 py-1 text-xs font-semibold transition ${labelUnit === u ? "bg-[#C9F24D] text-[#0B0C09]" : "bg-slate-900 text-slate-400 hover:text-slate-200"}`}
+                        >{u}</button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] text-slate-600">per 100{labelUnit}</span>
+                  </div>
+
                   {/* Image upload area */}
                   <div
                     onClick={() => labelInputRef.current?.click()}
@@ -1527,7 +1565,7 @@ export default function Dashboard() {
                       ].map(({ label, key, color }) => (
                         <div key={key}>
                           <p className={`text-sm font-bold ${color}`}>{extractedMacros[key]}</p>
-                          <p className="text-[9px] text-slate-500 uppercase tracking-wider">{label}/100g</p>
+                          <p className="text-[9px] text-slate-500 uppercase tracking-wider">{label}/100{extractedUnit}</p>
                         </div>
                       ))}
                     </div>
@@ -1570,6 +1608,8 @@ export default function Dashboard() {
                               onClick={() => {
                                 if (editingPref === p.ingredient_name) { setEditingPref(null); return; }
                                 setEditingPref(p.ingredient_name);
+                                setEditName(p.ingredient_name);
+                                setEditBrand(p.preferred_brand);
                                 setEditMacros({
                                   calories: p.calories_per_100g != null ? String(p.calories_per_100g) : "",
                                   protein: p.protein_per_100g != null ? String(p.protein_per_100g) : "",
@@ -1607,14 +1647,35 @@ export default function Dashboard() {
                                 <span className="text-slate-400 font-mono">{Number(value).toFixed(1)}</span>
                               </span>
                             ) : null)}
-                            <span className="text-[9px] text-slate-600 self-center">/100g</span>
+                            <span className="text-[9px] text-slate-600 self-center">/100{p.unit ?? "g"}</span>
                           </div>
                         )}
 
                         {/* Inline edit form */}
                         {editingPref === p.ingredient_name && (
                           <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
-                            <p className="text-[9px] font-bold uppercase tracking-wider text-[#C9F24D]">Edit macros per 100g</p>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-[#C9F24D]">Edit preference</p>
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <div className="flex flex-col gap-0.5">
+                                <label className="text-[8px] font-bold uppercase text-slate-500">Ingredient</label>
+                                <input
+                                  type="text"
+                                  value={editName}
+                                  onChange={(e) => setEditName(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <label className="text-[8px] font-bold uppercase text-slate-500">Brand</label>
+                                <input
+                                  type="text"
+                                  value={editBrand}
+                                  onChange={(e) => setEditBrand(e.target.value)}
+                                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]"
+                                />
+                              </div>
+                            </div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Macros per 100g</p>
                             <div className="grid grid-cols-4 gap-1.5">
                               {([
                                 { key: "calories" as const, label: "Cal",    color: "text-orange-400" },

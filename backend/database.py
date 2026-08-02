@@ -68,6 +68,7 @@ class IngredientCache(Base):
     protein_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
     carbs_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
     fat_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
+    unit: Mapped[str] = mapped_column(String, default="g", server_default="g", nullable=False)
 
 class AppSetting(Base):
     """Generic key-value store for small app-wide settings (e.g. preferred STT mode)."""
@@ -138,6 +139,7 @@ async def init_db():
             for col_ddl in [
                 "ALTER TABLE users ADD COLUMN username VARCHAR",
                 "ALTER TABLE users ADD COLUMN password_hash VARCHAR",
+                "ALTER TABLE ingredient_cache ADD COLUMN unit VARCHAR NOT NULL DEFAULT 'g'",
             ]:
                 try:
                     await conn.execute(text(col_ddl))

@@ -5,6 +5,7 @@ import json
 import base64
 import hashlib
 import shutil
+import asyncio
 import datetime
 import anthropic
 from contextlib import asynccontextmanager
@@ -875,6 +876,92 @@ Reply with ONLY a valid JSON array of 3 objects, no markdown, no explanation:
     }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# RESOLVE INGREDIENT — single ingredient macro lookup used by brand prefs UI
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ResolveIngredientRequest(BaseModel):
+    name: str
+    brand: str = ""
+    weight_g: float = 100
+
+@app.post("/api/resolve-ingredient")
+async def resolve_ingredient(
+    payload: ResolveIngredientRequest,
+    current_user: User = Depends(get_current_user),
+    x_anthropic_key: Optional[str] = Header(None),
+):
+    from llm_provider import set_request_key, _api_key_ctx
+    set_request_key(x_anthropic_key or "")
+    api_key = _api_key_ctx.get()
+
+    def _run():
+        label = f"{payload.brand} {payload.name}".strip()
+
+        # 1. Tavily web search
+        search_snippets = ""
+        try:
+            from langchain_tavily import TavilySearch
+            ts = TavilySearch(max_results=3)
+            query = f"nutritional values per 100g {label} calories protein carbs fat"
+            results = ts.invoke(query)
+            search_snippets = "\n".join(
+                r.get("content", "") if isinstance(r, dict) else str(r)
+                for r in results
+            )
+            print(f"[resolve-ingredient] Tavily returned {len(results)} snippets for '{label}'")
+        except Exception as te:
+            print(f"[resolve-ingredient] Tavily failed for '{label}': {te}")
+
+        # 2. LLM structured parse
+        if api_key:
+            try:
+                from pydantic import BaseModel as PBM, Field as PField
+                class MacroOut(PBM):
+                    calories_per_100g: float = PField(..., description="Calories per 100g")
+                    protein_per_100g:  float = PField(..., description="Protein g per 100g")
+                    carbs_per_100g:    float = PField(..., description="Carbs g per 100g")
+                    fat_per_100g:      float = PField(..., description="Fat g per 100g")
+
+                from llm_provider import get_resolution_llm
+                llm = get_resolution_llm(temperature=0)
+                parser = llm.with_structured_output(MacroOut)
+                prompt = (
+                    f"Determine nutritional facts per 100g (calories kcal, protein g, carbs g, fat g) "
+                    f"for: '{label}'.\n"
+                )
+                if search_snippets:
+                    prompt += f"Web search context:\n{search_snippets}\n"
+                prompt += "Use brand-specific data if available, otherwise use standard generic values."
+                parsed = parser.invoke(prompt)
+                return {
+                    "calories_per_100g": float(parsed.calories_per_100g),
+                    "protein_per_100g":  float(parsed.protein_per_100g),
+                    "carbs_per_100g":    float(parsed.carbs_per_100g),
+                    "fat_per_100g":      float(parsed.fat_per_100g),
+                    "source": "tavily+llm" if search_snippets else "llm",
+                }
+            except Exception as le:
+                print(f"[resolve-ingredient] LLM parse failed for '{label}': {le}")
+
+        # 3. Generic fallback
+        print(f"[resolve-ingredient] Using generic fallback for '{label}'")
+        return {
+            "calories_per_100g": 100.0,
+            "protein_per_100g":  5.0,
+            "carbs_per_100g":    10.0,
+            "fat_per_100g":      2.0,
+            "source": "generic_fallback",
+        }
+
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(None, _run)
+        return result
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Resolution failed: {e}")
+
+# ─────────────────────────────────────────────────────────────────────────────
 # BRAND PREFERENCES (global — no auth required)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -898,6 +985,7 @@ async def list_brand_preferences(db: AsyncSession = Depends(get_db)):
             "protein_per_100g": cache.protein_per_100g if cache else None,
             "carbs_per_100g": cache.carbs_per_100g if cache else None,
             "fat_per_100g": cache.fat_per_100g if cache else None,
+            "unit": (cache.unit if cache and cache.unit else "g"),
         }
         result.append(entry)
     return result
@@ -962,6 +1050,37 @@ async def update_preference_macros(ingredient_name: str, payload: MacroUpdateSch
         ))
     await db.commit()
     return {"status": "updated", "ingredient_name": name_l}
+
+class PrefRenameSchema(BaseModel):
+    new_ingredient_name: str
+    new_brand: str
+
+@app.patch("/api/brand-preferences/{ingredient_name}/rename")
+async def rename_brand_preference(ingredient_name: str, payload: PrefRenameSchema, db: AsyncSession = Depends(get_db)):
+    old_name = ingredient_name.strip().lower()
+    new_name = payload.new_ingredient_name.strip().lower()
+    new_brand = payload.new_brand.strip().lower()
+
+    pref_res = await db.execute(select(BrandPreference).where(BrandPreference.ingredient_name == old_name))
+    pref = pref_res.scalar_one_or_none()
+    if not pref:
+        raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
+
+    old_brand = pref.preferred_brand
+
+    # Move IngredientCache row if it exists
+    cache_res = await db.execute(
+        select(IngredientCache).where(IngredientCache.name == old_name, IngredientCache.brand == old_brand).limit(1)
+    )
+    cache = cache_res.scalar_one_or_none()
+    if cache:
+        cache.name  = new_name
+        cache.brand = new_brand
+
+    pref.ingredient_name  = new_name
+    pref.preferred_brand  = new_brand
+    await db.commit()
+    return {"status": "renamed", "ingredient_name": new_name, "brand": new_brand}
 
 @app.delete("/api/brand-preferences/{ingredient_name}")
 async def remove_brand_preference(ingredient_name: str, db: AsyncSession = Depends(get_db)):
@@ -1173,6 +1292,7 @@ async def set_brand_from_label(
     ingredient_name: str = Form(...),
     preferred_brand: str = Form(...),
     image: UploadFile = File(...),
+    unit: str = Form("g"),
     db: AsyncSession = Depends(get_db),
     x_anthropic_key: Optional[str] = Header(None),
 ):
@@ -1183,6 +1303,8 @@ async def set_brand_from_label(
     api_key = x_anthropic_key or os.environ.get("ANTHROPIC_API_KEY", "")
     client = anthropic.Anthropic(api_key=api_key)
 
+    unit_label = "100ml" if unit == "ml" else "100g"
+
     try:
         response = client.messages.create(
             model="claude-sonnet-4-6",
@@ -1191,7 +1313,7 @@ async def set_brand_from_label(
                 {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
                 {"type": "text", "text": (
                     f"This is a nutrition label for '{preferred_brand} {ingredient_name}'. "
-                    "Extract the nutritional values and normalise them to per 100g. "
+                    f"Extract the nutritional values and normalise them to per {unit_label}. "
                     "Reply with ONLY a raw JSON object with these four numeric keys: "
                     "calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g."
                 )},
@@ -1222,17 +1344,19 @@ async def set_brand_from_label(
         sql_select(IngredientCache).where(IngredientCache.name == name_lower, IngredientCache.brand == brand_lower)
     )
     cache_entry = result.scalar_one_or_none()
+    unit_val = "ml" if unit == "ml" else "g"
     if cache_entry:
         cache_entry.calories_per_100g = macros["calories_per_100g"]
         cache_entry.protein_per_100g  = macros["protein_per_100g"]
         cache_entry.carbs_per_100g    = macros["carbs_per_100g"]
         cache_entry.fat_per_100g      = macros["fat_per_100g"]
+        cache_entry.unit              = unit_val
     else:
-        db.add(IngredientCache(name=name_lower, brand=brand_lower, **macros))
+        db.add(IngredientCache(name=name_lower, brand=brand_lower, unit=unit_val, **macros))
 
     await set_brand_preference(db, ingredient_name, preferred_brand)
     await db.commit()
-    return {"status": "success", "ingredient_name": name_lower, "preferred_brand": brand_lower, "macros": macros, "source": "label_image"}
+    return {"status": "success", "ingredient_name": name_lower, "preferred_brand": brand_lower, "macros": macros, "unit": unit, "source": "label_image"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # API KEY MANAGEMENT (global — no auth)
