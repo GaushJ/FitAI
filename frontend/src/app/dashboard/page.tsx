@@ -773,7 +773,7 @@ export default function Dashboard() {
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-[#C9F24D] selection:text-[#0B0C09] pb-16">
+    <div className="relative min-h-screen overflow-x-hidden bg-slate-950 text-slate-100 font-sans selection:bg-[#C9F24D] selection:text-[#0B0C09] pb-16">
       {/* Background glows */}
       <div className="absolute top-0 left-1/4 w-[40rem] h-[40rem] bg-[#C9F24D]/5 rounded-full blur-[100px] pointer-events-none" />
       <div className="absolute top-1/3 right-1/4 w-[35rem] h-[35rem] bg-[#C9F24D]/5 rounded-full blur-[100px] pointer-events-none" />
