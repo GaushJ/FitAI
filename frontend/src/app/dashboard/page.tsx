@@ -1571,10 +1571,10 @@ export default function Dashboard() {
                                 if (editingPref === p.ingredient_name) { setEditingPref(null); return; }
                                 setEditingPref(p.ingredient_name);
                                 setEditMacros({
-                                  calories: p.calories_per_100g ?? "",
-                                  protein: p.protein_per_100g ?? "",
-                                  carbs: p.carbs_per_100g ?? "",
-                                  fat: p.fat_per_100g ?? "",
+                                  calories: p.calories_per_100g != null ? String(p.calories_per_100g) : "",
+                                  protein: p.protein_per_100g != null ? String(p.protein_per_100g) : "",
+                                  carbs: p.carbs_per_100g != null ? String(p.carbs_per_100g) : "",
+                                  fat: p.fat_per_100g != null ? String(p.fat_per_100g) : "",
                                 });
                                 setMacroMsg(null);
                               }}
