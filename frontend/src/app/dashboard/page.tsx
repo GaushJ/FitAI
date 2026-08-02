@@ -1275,7 +1275,7 @@ export default function Dashboard() {
                       <span className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full bg-gradient-to-r ${PROVIDER_COLORS[selectedProvider]}`} />
                         <span className="text-slate-100 font-medium">{selectedKeyInfo?.label}</span>
-                        <span className="text-slate-500 text-[10px]">({selectedKeyInfo?.env_key})</span>
+                        <span className="text-slate-500 text-[10px]">({selectedKeyInfo?.description})</span>
                       </span>
                     ) : (
                       <span className="text-slate-500">Choose a provider...</span>
@@ -1295,7 +1295,7 @@ export default function Dashboard() {
                           <span className={`w-2.5 h-2.5 rounded-full bg-gradient-to-r flex-shrink-0 ${PROVIDER_COLORS[k.provider]}`} />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-slate-200">{k.label}</p>
-                            <p className="text-[10px] text-slate-500 truncate">{k.env_key}</p>
+                            <p className="text-[10px] text-slate-500 truncate">{k.description}</p>
                           </div>
                           {k.is_set && <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />}
                         </button>
@@ -1308,7 +1308,7 @@ export default function Dashboard() {
                 {selectedProvider && (
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      {selectedKeyInfo?.env_key}
+                      {selectedKeyInfo?.label} Key
                     </label>
                     <div className="relative">
                       <input
