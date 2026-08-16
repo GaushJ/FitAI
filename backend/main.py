@@ -27,16 +27,12 @@ from database import (
     init_db, get_db, User, DailyFoodLog, BrandPreference, IngredientCache,
     FrequentMeal, SavedMeal, update_user_streak, get_brand_preferences,
     set_brand_preference, delete_brand_preference,
-    get_app_setting, set_app_setting,
     create_user, get_user_by_username, get_user_by_id,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from stt_worker import transcribe_audio
 from llm_provider import set_request_key
 from graph_engine import compiled_graph
-
-# ── Environment detection ─────────────────────────────────────────────────────
-IS_PRODUCTION = os.environ.get("ENVIRONMENT", "development").strip().lower() == "production"
 
 # ── JWT / Auth configuration ──────────────────────────────────────────────────
 # Set JWT_SECRET to a long random string in your hosting provider's env vars.
@@ -87,18 +83,11 @@ SUPPORTED_PROVIDERS = {
     "tavily":    {"label": "Tavily Search",      "env_key": "TAVILY_API_KEY",     "description": "Web search fallback for unknown ingredients"},
 }
 
-# ── App lifespan (DB init + key hot-loading) ──────────────────────────────────
+# ── App lifespan (DB init + temp dir) ──────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     os.makedirs("temp_audio", exist_ok=True)
-    from database import AsyncSessionLocal
-    async with AsyncSessionLocal() as session:
-        if IS_PRODUCTION:
-            os.environ["STT_MODE"] = "cloud"
-        else:
-            saved_mode = await get_app_setting(session, "stt_mode", default="auto")
-            os.environ["STT_MODE"] = saved_mode
     yield
     if os.path.exists("temp_audio"):
         shutil.rmtree("temp_audio")
@@ -147,11 +136,6 @@ class BrandPreferenceSchema(BaseModel):
     protein_per_100g: Optional[float] = None
     carbs_per_100g: Optional[float] = None
     fat_per_100g: Optional[float] = None
-
-class STTModeSchema(BaseModel):
-    mode: str  # "auto" | "cloud" | "local"
-
-VALID_STT_MODES = {"auto", "cloud", "local"}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # AUTH ENDPOINTS
@@ -308,7 +292,7 @@ async def transcribe_only(
         transcript = transcribe_audio(temp_file_path, groq_api_key=x_groq_key or "")
         return {"status": "success", "transcript": transcript}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Failed to transcribe audio")
+        raise HTTPException(status_code=500, detail=f"Failed to transcribe audio: {e}")
     finally:
         if os.path.exists(temp_file_path):
             try: os.remove(temp_file_path)
@@ -421,7 +405,7 @@ async def track_meal(
                 shutil.copyfileobj(file.file, buffer)
             transcript = transcribe_audio(temp_file_path, groq_api_key=x_groq_key or "")
         except Exception as e:
-            raise HTTPException(status_code=500, detail="Failed to process or transcribe audio")
+            raise HTTPException(status_code=500, detail=f"Failed to transcribe audio: {e}")
         finally:
             if os.path.exists(temp_file_path):
                 try: os.remove(temp_file_path)
@@ -1536,31 +1520,6 @@ async def list_api_keys():
         for p, m in SUPPORTED_PROVIDERS.items()
     ]
 
-# STT MODE SETTINGS (dev-only toggle, no auth required)
-# ─────────────────────────────────────────────────────────────────────────────
-
-@app.get("/api/stt-settings")
-async def get_stt_settings(db: AsyncSession = Depends(get_db)):
-    return {
-        "allow_local_choice": not IS_PRODUCTION,
-        "current_mode": os.environ.get("STT_MODE", "auto"),
-        "is_production": IS_PRODUCTION,
-        "modes": [
-            {"value": "auto",  "label": "Auto (Cloud then Local)",       "description": "Uses Groq if key is set, falls back to local model."},
-            {"value": "cloud", "label": "Cloud Only (Groq API)",          "description": "Always uses Groq's hosted Whisper. Needs a Groq API key."},
-            {"value": "local", "label": "Local Only (On-device Whisper)", "description": "Runs faster-whisper on your machine. No key needed."},
-        ],
-    }
-
-@app.post("/api/stt-settings")
-async def update_stt_settings(payload: STTModeSchema, db: AsyncSession = Depends(get_db)):
-    if IS_PRODUCTION:
-        raise HTTPException(status_code=403, detail="STT mode is locked to 'cloud' in production.")
-    if payload.mode not in VALID_STT_MODES:
-        raise HTTPException(status_code=400, detail=f"Invalid mode. Must be one of {sorted(VALID_STT_MODES)}")
-    await set_app_setting(db, "stt_mode", payload.mode)
-    os.environ["STT_MODE"] = payload.mode
-    return {"status": "saved", "mode": payload.mode}
 
 if __name__ == "__main__":
     import uvicorn
