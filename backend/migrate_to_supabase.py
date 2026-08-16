@@ -72,7 +72,6 @@ def read_sqlite() -> dict:
         "users",
         "ingredient_cache",
         "brand_preferences",
-        "api_keys",
         "app_settings",
         "daily_food_logs",
     ]
@@ -159,17 +158,6 @@ async def insert_data(data: dict):
             )
         print(f"  [OK]   brand_preferences: {len(data['brand_preferences'])} row(s) inserted")
 
-        # -- api_keys ----------------------------------------------------------
-        for row in data["api_keys"]:
-            await conn.execute("""
-                INSERT INTO api_keys (id, provider, api_key)
-                VALUES ($1,$2,$3)
-                ON CONFLICT (id) DO NOTHING
-            """,
-                row["id"], row["provider"], row["api_key"],
-            )
-        print(f"  [OK]   api_keys: {len(data['api_keys'])} row(s) inserted")
-
         # -- app_settings ------------------------------------------------------
         for row in data["app_settings"]:
             await conn.execute("""
@@ -208,7 +196,6 @@ async def insert_data(data: dict):
             ("users_id_seq",              "users"),
             ("ingredient_cache_id_seq",   "ingredient_cache"),
             ("brand_preferences_id_seq",  "brand_preferences"),
-            ("api_keys_id_seq",           "api_keys"),
             ("app_settings_id_seq",       "app_settings"),
             ("daily_food_logs_id_seq",    "daily_food_logs"),
         ]
@@ -229,7 +216,7 @@ async def verify(data: dict):
     conn = await asyncpg.connect(RAW_PG_URL, ssl="require")
     tables = [
         "users", "ingredient_cache", "brand_preferences",
-        "api_keys", "app_settings", "daily_food_logs",
+        "app_settings", "daily_food_logs",
     ]
     print("\n  Verification — row counts:")
     all_ok = True

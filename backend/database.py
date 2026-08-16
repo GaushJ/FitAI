@@ -2,35 +2,36 @@ import os
 import asyncio
 import datetime
 from typing import Optional, List
-from sqlalchemy import String, Integer, Float, Date, JSON, ForeignKey, select, text
+from sqlalchemy import String, Integer, Float, Date, DateTime, JSON, ForeignKey, select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 # ── Database URL ──────────────────────────────────────────────────────────────
-# Production (Render): set DATABASE_URL in your Render environment variables
-# to the Supabase connection string (postgresql://postgres:...@db.xxx.supabase.co:5432/postgres).
-# The "postgres://" scheme from Supabase is rewritten to the asyncpg dialect automatically.
-#
-# Local development: falls back to a local SQLite file — no env var needed.
+# Set DATABASE_URL to your Supabase connection string
+# (postgresql://postgres:...@db.xxx.supabase.co:5432/postgres) — both locally
+# (backend/.env) and in your hosting provider's env vars (e.g. Render).
+# This app uses Supabase exclusively; there is no local SQLite fallback.
 _raw_url = os.environ.get("DATABASE_URL", "")
 
-if _raw_url:
-    # Supabase (and Heroku-style) give "postgres://..." — SQLAlchemy needs "postgresql+asyncpg://"
-    DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1) \
-                            .replace("postgresql://", "postgresql+asyncpg://", 1)
-    # Supabase requires SSL — pass it via connect_args so asyncpg enforces it.
-    # pool_pre_ping keeps the connection alive across Render's sleep/wake cycles.
-    engine = create_async_engine(
-        DATABASE_URL,
-        echo=False,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,
-        connect_args={"ssl": "require"},
+if not _raw_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. This app requires a Supabase/Postgres connection "
+        "string — set it in backend/.env (local) or your hosting provider's env vars (prod)."
     )
-else:
-    DATABASE_URL = "sqlite+aiosqlite:///./meal_tracker.db"
-    engine = create_async_engine(DATABASE_URL, echo=False)
+
+# Supabase (and Heroku-style) give "postgres://..." — SQLAlchemy needs "postgresql+asyncpg://"
+DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1) \
+                        .replace("postgresql://", "postgresql+asyncpg://", 1)
+# Supabase requires SSL — pass it via connect_args so asyncpg enforces it.
+# pool_pre_ping keeps the connection alive across Render's sleep/wake cycles.
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=False,
+    pool_size=5,
+    max_overflow=10,
+    pool_pre_ping=True,
+    connect_args={"ssl": "require"},
+)
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -57,6 +58,7 @@ class User(Base):
 
     food_logs: Mapped[List["DailyFoodLog"]] = relationship("DailyFoodLog", back_populates="user", cascade="all, delete-orphan")
     frequent_meals: Mapped[List["FrequentMeal"]] = relationship("FrequentMeal", back_populates="user", cascade="all, delete-orphan")
+    saved_meals: Mapped[List["SavedMeal"]] = relationship("SavedMeal", back_populates="user", cascade="all, delete-orphan")
 
 class IngredientCache(Base):
     __tablename__ = "ingredient_cache"
@@ -77,13 +79,6 @@ class AppSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     key: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     value: Mapped[str] = mapped_column(String, nullable=False)
-
-class APIKey(Base):
-    __tablename__ = "api_keys"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    provider: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    api_key: Mapped[str] = mapped_column(String, nullable=False)
 
 class BrandPreference(Base):
     __tablename__ = "brand_preferences"
@@ -112,6 +107,24 @@ class FrequentMeal(Base):
 
     user: Mapped["User"] = relationship("User", back_populates="frequent_meals")
 
+class SavedMeal(Base):
+    """
+    User-created meal template (e.g. "Breakfast Omelette + Protein Shake").
+    Unlike FrequentMeal (auto-detected from repeat logs), these are explicitly
+    saved by the user and can be freely renamed/edited — ingredients added,
+    removed, or reweighed — before each use.
+    """
+    __tablename__ = "saved_meals"
+
+    id: Mapped[int]           = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int]      = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name: Mapped[str]         = mapped_column(String, nullable=False)
+    ingredients: Mapped[list] = mapped_column(JSON, nullable=False)   # list of resolved ingredient dicts
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="saved_meals")
+
 class DailyFoodLog(Base):
     __tablename__ = "daily_food_logs"
 
@@ -131,20 +144,6 @@ async def init_db():
     async with engine.begin() as conn:
         # Create all tables if they don't exist
         await conn.run_sync(Base.metadata.create_all)
-
-        # ── Schema migration: add auth columns to existing SQLite DBs ────────
-        # Only needed for SQLite (local dev). PostgreSQL / Supabase always gets
-        # a fresh schema from create_all above — no manual ALTER needed there.
-        if DATABASE_URL.startswith("sqlite"):
-            for col_ddl in [
-                "ALTER TABLE users ADD COLUMN username VARCHAR",
-                "ALTER TABLE users ADD COLUMN password_hash VARCHAR",
-                "ALTER TABLE ingredient_cache ADD COLUMN unit VARCHAR NOT NULL DEFAULT 'g'",
-            ]:
-                try:
-                    await conn.execute(text(col_ddl))
-                except Exception:
-                    pass  # column already exists — fine
 
     async with AsyncSessionLocal() as session:
         # Seed ingredient cache if empty
@@ -246,32 +245,6 @@ async def set_app_setting(session: AsyncSession, key: str, value: str) -> "AppSe
         session.add(setting)
     await session.commit()
     return setting
-
-# ─── API key helpers ──────────────────────────────────────────────────────────
-
-async def get_all_api_keys(session: AsyncSession) -> List["APIKey"]:
-    result = await session.execute(select(APIKey))
-    return result.scalars().all()
-
-async def save_api_key(session: AsyncSession, provider: str, api_key: str) -> "APIKey":
-    result = await session.execute(select(APIKey).where(APIKey.provider == provider))
-    entry = result.scalar_one_or_none()
-    if entry:
-        entry.api_key = api_key
-    else:
-        entry = APIKey(provider=provider, api_key=api_key)
-        session.add(entry)
-    await session.commit()
-    return entry
-
-async def delete_api_key(session: AsyncSession, provider: str) -> bool:
-    result = await session.execute(select(APIKey).where(APIKey.provider == provider))
-    entry = result.scalar_one_or_none()
-    if entry:
-        await session.delete(entry)
-        await session.commit()
-        return True
-    return False
 
 # ─── Brand preference helpers ─────────────────────────────────────────────────
 

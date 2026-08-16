@@ -25,9 +25,8 @@ load_dotenv()
 
 from database import (
     init_db, get_db, User, DailyFoodLog, BrandPreference, IngredientCache,
-    FrequentMeal, APIKey, update_user_streak, get_brand_preferences,
+    FrequentMeal, SavedMeal, update_user_streak, get_brand_preferences,
     set_brand_preference, delete_brand_preference,
-    get_all_api_keys, save_api_key, delete_api_key,
     get_app_setting, set_app_setting,
     create_user, get_user_by_username, get_user_by_id,
 )
@@ -148,10 +147,6 @@ class BrandPreferenceSchema(BaseModel):
     protein_per_100g: Optional[float] = None
     carbs_per_100g: Optional[float] = None
     fat_per_100g: Optional[float] = None
-
-class APIKeySchema(BaseModel):
-    provider: str
-    api_key: str
 
 class STTModeSchema(BaseModel):
     mode: str  # "auto" | "cloud" | "local"
@@ -340,6 +335,36 @@ def meal_display_name(resolved_ingredients: list) -> str:
     if len(names) <= 3:
         return " + ".join(names)
     return " + ".join(names[:3]) + f" +{len(names) - 3} more"
+
+def _totals_from_ingredients(ingredients: list) -> dict:
+    """Recompute total macros from a list of {weight_g, *_per_100g} ingredient dicts."""
+    total_cal = total_pro = total_crb = total_fat = 0.0
+    for ing in ingredients:
+        weight_factor = float(ing.get("weight_g", 0) or 0) / 100.0
+        total_cal += float(ing.get("calories_per_100g", 0) or 0) * weight_factor
+        total_pro += float(ing.get("protein_per_100g",  0) or 0) * weight_factor
+        total_crb += float(ing.get("carbs_per_100g",    0) or 0) * weight_factor
+        total_fat += float(ing.get("fat_per_100g",      0) or 0) * weight_factor
+    return {
+        "calories": round(total_cal, 1),
+        "protein":  round(total_pro, 1),
+        "carbs":    round(total_crb, 1),
+        "fat":      round(total_fat, 1),
+    }
+
+def _apply_portion_overrides(ingredients: list, portions: Optional[dict]) -> list:
+    """Return a copy of `ingredients` with weight_g overridden per `portions` ({name: new_grams})."""
+    if not portions:
+        return [dict(ing) for ing in ingredients]
+    portions_lower = {str(k).lower(): v for k, v in portions.items()}
+    updated = []
+    for ing in ingredients:
+        ing = dict(ing)
+        name_lower = (ing.get("name") or "").lower()
+        if name_lower in portions_lower:
+            ing["weight_g"] = float(portions_lower[name_lower])
+        updated.append(ing)
+    return updated
 
 async def _upsert_frequent_meal(
     db: AsyncSession,
@@ -675,35 +700,9 @@ async def quick_log_frequent_meal(
     if not fm:
         raise HTTPException(status_code=404, detail="Frequent meal not found.")
 
-    ingredients = list(fm.ingredients)   # make a mutable copy
-
-    # Apply portion overrides if provided
-    if payload.portions:
-        for ing in ingredients:
-            name = (ing.get("name") or "").lower()
-            if name in {k.lower() for k in payload.portions}:
-                # Find the matching key (case-insensitive)
-                override_key = next(k for k in payload.portions if k.lower() == name)
-                new_grams    = float(payload.portions[override_key])
-                old_grams    = float(ing.get("grams", 100))
-                ratio        = new_grams / old_grams if old_grams else 1.0
-                # Scale every macro proportionally
-                for macro in ("calories", "protein", "carbs", "fat"):
-                    if macro in ing:
-                        ing[macro] = round(float(ing[macro]) * ratio, 1)
-                ing["grams"] = new_grams
-
-    # Recompute total macros after portion adjustment
-    total_cal = sum(float(i.get("calories", 0)) for i in ingredients)
-    total_pro = sum(float(i.get("protein",  0)) for i in ingredients)
-    total_crb = sum(float(i.get("carbs",    0)) for i in ingredients)
-    total_fat = sum(float(i.get("fat",      0)) for i in ingredients)
-    total_meal_macros = {
-        "calories": round(total_cal, 1),
-        "protein":  round(total_pro, 1),
-        "carbs":    round(total_crb, 1),
-        "fat":      round(total_fat, 1),
-    }
+    # Apply portion overrides (if any) and recompute totals from per-100g values
+    ingredients = _apply_portion_overrides(fm.ingredients, payload.portions)
+    total_meal_macros = _totals_from_ingredients(ingredients)
 
     transcript = f"Quick-logged: {fm.display_name}"
 
@@ -748,6 +747,173 @@ async def delete_frequent_meal(
     await db.delete(fm)
     await db.commit()
     return {"status": "deleted", "meal_id": meal_id}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SAVED MEALS (auth-protected)
+# User-created meal templates, e.g. "Omelette + Protein Shake". Unlike Frequent
+# Meals (auto-detected after 2+ identical logs), these are explicitly saved and
+# freely editable — ingredients can be reweighed, added, or removed before each use.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SavedMealIngredientSchema(BaseModel):
+    name: str
+    brand: Optional[str] = None
+    weight_g: float
+    calories_per_100g: float
+    protein_per_100g: float
+    carbs_per_100g: float
+    fat_per_100g: float
+
+class SavedMealCreateSchema(BaseModel):
+    name: str
+    ingredients: List[SavedMealIngredientSchema]
+
+class SavedMealUpdateSchema(BaseModel):
+    name: Optional[str] = None
+    ingredients: Optional[List[SavedMealIngredientSchema]] = None
+
+class SavedMealLogSchema(BaseModel):
+    ingredients: Optional[List[SavedMealIngredientSchema]] = None   # override for this log only
+
+def _serialize_saved_meal(m: "SavedMeal") -> dict:
+    return {
+        "id": m.id,
+        "name": m.name,
+        "ingredients": m.ingredients,
+        "macros": _totals_from_ingredients(m.ingredients),
+        "created_at": m.created_at.isoformat(),
+        "updated_at": m.updated_at.isoformat(),
+    }
+
+@app.get("/api/saved-meals")
+async def list_saved_meals(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(SavedMeal)
+        .where(SavedMeal.user_id == current_user.id)
+        .order_by(SavedMeal.updated_at.desc())
+    )
+    return [_serialize_saved_meal(m) for m in res.scalars().all()]
+
+@app.post("/api/saved-meals")
+async def create_saved_meal(
+    payload: SavedMealCreateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not payload.name.strip():
+        raise HTTPException(status_code=400, detail="Meal name is required.")
+    if not payload.ingredients:
+        raise HTTPException(status_code=400, detail="At least one ingredient is required.")
+
+    meal = SavedMeal(
+        user_id=current_user.id,
+        name=payload.name.strip(),
+        ingredients=[i.model_dump() for i in payload.ingredients],
+    )
+    db.add(meal)
+    await db.commit()
+    await db.refresh(meal)
+    return _serialize_saved_meal(meal)
+
+@app.put("/api/saved-meals/{meal_id}")
+async def update_saved_meal(
+    meal_id: int,
+    payload: SavedMealUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(SavedMeal).where(SavedMeal.id == meal_id, SavedMeal.user_id == current_user.id)
+    )
+    meal = res.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Saved meal not found.")
+
+    if payload.name is not None:
+        if not payload.name.strip():
+            raise HTTPException(status_code=400, detail="Meal name cannot be empty.")
+        meal.name = payload.name.strip()
+
+    if payload.ingredients is not None:
+        if not payload.ingredients:
+            raise HTTPException(status_code=400, detail="At least one ingredient is required.")
+        meal.ingredients = [i.model_dump() for i in payload.ingredients]
+
+    meal.updated_at = datetime.datetime.utcnow()
+    await db.commit()
+    await db.refresh(meal)
+    return _serialize_saved_meal(meal)
+
+@app.delete("/api/saved-meals/{meal_id}")
+async def delete_saved_meal(
+    meal_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    res = await db.execute(
+        select(SavedMeal).where(SavedMeal.id == meal_id, SavedMeal.user_id == current_user.id)
+    )
+    meal = res.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Saved meal not found.")
+    await db.delete(meal)
+    await db.commit()
+    return {"status": "deleted", "meal_id": meal_id}
+
+@app.post("/api/saved-meals/{meal_id}/log")
+async def log_saved_meal(
+    meal_id: int,
+    payload: SavedMealLogSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Log a saved meal as today's food entry. Pass `ingredients` to log with
+    changed quantities or extra/removed ingredients for this one use — the
+    saved template itself is untouched unless you PUT /api/saved-meals/{id}.
+    """
+    res = await db.execute(
+        select(SavedMeal).where(SavedMeal.id == meal_id, SavedMeal.user_id == current_user.id)
+    )
+    meal = res.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Saved meal not found.")
+
+    ingredients = (
+        [i.model_dump() for i in payload.ingredients]
+        if payload.ingredients is not None
+        else list(meal.ingredients)
+    )
+    if not ingredients:
+        raise HTTPException(status_code=400, detail="At least one ingredient is required.")
+
+    total_meal_macros = _totals_from_ingredients(ingredients)
+
+    food_log = DailyFoodLog(
+        user_id=current_user.id,
+        date=datetime.date.today(),
+        raw_transcript=f"Logged saved meal: {meal.name}",
+        computed_macros={"resolved_ingredients": ingredients, "total_meal_macros": total_meal_macros},
+    )
+    db.add(food_log)
+
+    # Also feed the frequent-meals auto-detection so this stays consistent
+    # with meals logged via voice/text.
+    await _upsert_frequent_meal(db, current_user.id, ingredients, total_meal_macros)
+
+    streak = await update_user_streak(db, user_id=current_user.id)
+    await db.commit()
+
+    return {
+        "status": "success",
+        "streak": streak,
+        "ingredients": ingredients,
+        "macros": total_meal_macros,
+        "name": meal.name,
+    }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SMART MACRO SUGGESTIONS — Claude-powered (auth-protected)
