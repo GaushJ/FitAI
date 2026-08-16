@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FitVoice | AI Voice-Driven Meal & Macro Tracker",
-  description: "Track your daily macros, streaks, and calories using high-fidelity local voice recognition and agentic AI resolution.",
+  title: "Macronaut | AI Meal & Macro Tracker",
+  description: "Track your daily macros, streaks, and calories with agentic AI that resolves brands, portions, and prep — type it or say it.",
 };
 
 export default function RootLayout({
