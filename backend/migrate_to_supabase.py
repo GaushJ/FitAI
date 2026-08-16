@@ -72,7 +72,6 @@ def read_sqlite() -> dict:
         "users",
         "ingredient_cache",
         "brand_preferences",
-        "app_settings",
         "daily_food_logs",
     ]
     data = {}
@@ -158,17 +157,6 @@ async def insert_data(data: dict):
             )
         print(f"  [OK]   brand_preferences: {len(data['brand_preferences'])} row(s) inserted")
 
-        # -- app_settings ------------------------------------------------------
-        for row in data["app_settings"]:
-            await conn.execute("""
-                INSERT INTO app_settings (id, key, value)
-                VALUES ($1,$2,$3)
-                ON CONFLICT (id) DO NOTHING
-            """,
-                row["id"], row["key"], row["value"],
-            )
-        print(f"  [OK]   app_settings: {len(data['app_settings'])} row(s) inserted")
-
         # -- daily_food_logs ---------------------------------------------------
         for row in data["daily_food_logs"]:
             # SQLite stores JSON as a plain string — parse it before inserting
@@ -196,7 +184,6 @@ async def insert_data(data: dict):
             ("users_id_seq",              "users"),
             ("ingredient_cache_id_seq",   "ingredient_cache"),
             ("brand_preferences_id_seq",  "brand_preferences"),
-            ("app_settings_id_seq",       "app_settings"),
             ("daily_food_logs_id_seq",    "daily_food_logs"),
         ]
         for seq_name, table_name in sequence_tables:
@@ -215,8 +202,7 @@ async def verify(data: dict):
 
     conn = await asyncpg.connect(RAW_PG_URL, ssl="require")
     tables = [
-        "users", "ingredient_cache", "brand_preferences",
-        "app_settings", "daily_food_logs",
+        "users", "ingredient_cache", "brand_preferences", "daily_food_logs",
     ]
     print("\n  Verification — row counts:")
     all_ok = True

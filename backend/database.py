@@ -72,14 +72,6 @@ class IngredientCache(Base):
     fat_per_100g: Mapped[float] = mapped_column(Float, default=0.0)
     unit: Mapped[str] = mapped_column(String, default="g", server_default="g", nullable=False)
 
-class AppSetting(Base):
-    """Generic key-value store for small app-wide settings (e.g. preferred STT mode)."""
-    __tablename__ = "app_settings"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    key: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    value: Mapped[str] = mapped_column(String, nullable=False)
-
 class BrandPreference(Base):
     __tablename__ = "brand_preferences"
 
@@ -227,24 +219,6 @@ async def update_user_streak(session: AsyncSession, user_id: int) -> int:
     user.last_active_date = today
     await session.commit()
     return user.current_streak
-
-# ─── App settings helpers ─────────────────────────────────────────────────────
-
-async def get_app_setting(session: AsyncSession, key: str, default: Optional[str] = None) -> Optional[str]:
-    result = await session.execute(select(AppSetting).where(AppSetting.key == key))
-    setting = result.scalar_one_or_none()
-    return setting.value if setting else default
-
-async def set_app_setting(session: AsyncSession, key: str, value: str) -> "AppSetting":
-    result = await session.execute(select(AppSetting).where(AppSetting.key == key))
-    setting = result.scalar_one_or_none()
-    if setting:
-        setting.value = value
-    else:
-        setting = AppSetting(key=key, value=value)
-        session.add(setting)
-    await session.commit()
-    return setting
 
 # ─── Brand preference helpers ─────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ import {
   Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
   Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
   LogOut, BarChart2, Zap, Sliders, RefreshCw, Pencil, Menu,
-  Bookmark, Save,
+  Bookmark, Save, ArrowUp,
 } from "lucide-react";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -240,15 +240,6 @@ export default function Dashboard() {
   const [keyMsg, setKeyMsg]               = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [providerDropOpen, setProviderDropOpen] = useState(false);
 
-  // ── STT engine settings (dev-only toggle: cloud vs local Whisper)
-  const [sttSettings, setSttSettings] = useState<{
-    allow_local_choice: boolean;
-    current_mode: string;
-    is_production: boolean;
-    modes: Array<{ value: string; label: string; description: string }>;
-  } | null>(null);
-  const [sttSaving, setSttSaving] = useState(false);
-
   // ── Expanded meal cards
   const [expandedMeals, setExpandedMeals] = useState<Set<number>>(new Set());
 
@@ -283,6 +274,7 @@ export default function Dashboard() {
   const audioChunksRef   = useRef<Blob[]>([]);
   const timerRef         = useRef<NodeJS.Timeout | null>(null);
   const labelInputRef    = useRef<HTMLInputElement>(null);
+  const recordStartRef   = useRef<number>(0);
 
   // ─── Data fetching ─────────────────────────────────────────────────────────
 
@@ -331,13 +323,6 @@ export default function Dashboard() {
     })));
   };
 
-  const fetchSttSettings = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/stt-settings`);
-      if (res.ok) setSttSettings(await res.json());
-    } catch { /* silent */ }
-  };
-
   const fetchFrequentMeals = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/frequent-meals`, { headers: authHeaders() });
@@ -369,7 +354,6 @@ export default function Dashboard() {
     fetchDashboardData();
     fetchBrandPrefs();
     fetchApiKeys();
-    fetchSttSettings();
     fetchFrequentMeals();
     fetchSavedMeals();
 
@@ -393,18 +377,32 @@ export default function Dashboard() {
     setErrorMsg(""); setSuccessMsg("");
     audioChunksRef.current = [];
     try {
+      // Plain `audio: true` — explicit echoCancellation/noiseSuppression/autoGainControl
+      // was tried and made things worse: autoGainControl takes a moment to calibrate,
+      // and on these short recordings it can leave real speech under-amplified enough
+      // that Whisper treats it as near-silence and hallucinates generic filler
+      // ("Thank you.", "you") instead of transcribing what was actually said.
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      let opts = { mimeType: "audio/webm" };
-      if (!MediaRecorder.isTypeSupported(opts.mimeType)) opts = { mimeType: "audio/ogg" };
-      if (!MediaRecorder.isTypeSupported(opts.mimeType)) (opts as any) = {};
+      let opts: MediaRecorderOptions = { mimeType: "audio/webm", audioBitsPerSecond: 128000 };
+      if (!MediaRecorder.isTypeSupported(opts.mimeType!)) opts = { mimeType: "audio/ogg", audioBitsPerSecond: 128000 };
+      if (!MediaRecorder.isTypeSupported(opts.mimeType!)) opts = {};
       const mr = new MediaRecorder(stream, opts);
       mediaRecorderRef.current = mr;
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        // Guard against near-instant taps producing near-empty audio — Whisper
+        // has no "silence" output, so it hallucinates plausible-sounding text
+        // instead of failing, which is worse than just not sending it at all.
+        const durationMs = Date.now() - recordStartRef.current;
+        if (durationMs < 800) {
+          setErrorMsg("Recording was too short to transcribe — hold the mic a little longer and speak clearly.");
+          return;
+        }
         const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || "audio/webm" });
         await handleAudioUpload(blob);
-        stream.getTracks().forEach((t) => t.stop());
       };
+      recordStartRef.current = Date.now();
       mr.start(200);
       setIsRecording(true);
     } catch (err) {
@@ -428,7 +426,7 @@ export default function Dashboard() {
       if (!res.ok) throw new Error((await res.json()).detail || "Transcription failed");
       const data = await res.json();
       setTextQuery(data.transcript);
-      setSuccessMsg("Voice transcribed! Review and edit below, then click Confirm & Log.");
+      setSuccessMsg("Transcribed! Review and edit below, then tap send.");
     } catch (err: any) {
       setErrorMsg(err.message || "Network error while transcribing.");
     } finally {
@@ -489,27 +487,6 @@ export default function Dashboard() {
       await fetchDashboardData();
     } catch (err: any) {
       setErrorMsg("Error saving profile.");
-    }
-  };
-
-  // ─── STT engine mode (dev-only) ────────────────────────────────────────────
-
-  const handleSttModeChange = async (mode: string) => {
-    if (!sttSettings || sttSettings.is_production) return;
-    setSttSaving(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/stt-settings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ mode }),
-      });
-      if (!res.ok) throw new Error("Failed to update STT mode");
-      await fetchSttSettings();
-      setSuccessMsg(`Speech-to-text engine switched to "${sttSettings.modes.find(m => m.value === mode)?.label}".`);
-    } catch {
-      setErrorMsg("Failed to update STT engine preference.");
-    } finally {
-      setSttSaving(false);
     }
   };
 
@@ -678,7 +655,7 @@ export default function Dashboard() {
       // Use the filename the server suggests, or fall back to a default
       const cd   = res.headers.get("Content-Disposition") ?? "";
       const match = cd.match(/filename="?([^"]+)"?/);
-      a.download = match?.[1] ?? "fitvoice_brand_preferences.xlsx";
+      a.download = match?.[1] ?? "macronaut_brand_preferences.xlsx";
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -1001,9 +978,9 @@ export default function Dashboard() {
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
-                FitVoice <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
+                Macronaut <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
               </h1>
-              <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
+              <p className="text-[10px] text-slate-500">AI-Powered Macro Tracking</p>
             </div>
           </div>
 
@@ -1169,78 +1146,68 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Left column: Voice panel ── */}
+        {/* ── Left column: Log a meal ── */}
         <section className="lg:col-span-5 flex flex-col gap-6">
-          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 md:p-8 flex flex-col items-center text-center relative overflow-hidden shadow-2xl min-h-[420px]">
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 md:p-8 flex flex-col relative overflow-hidden shadow-2xl min-h-[420px]">
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-[#C9F24D]/8 rounded-full blur-[40px] pointer-events-none" />
 
-            <div className="w-full flex justify-between items-center z-10">
-              <div className="flex items-center gap-2 bg-[#C9F24D]/10 border border-[#C9F24D]/20 px-3 py-1 rounded-full text-[10px] text-[#C9F24D] font-bold uppercase tracking-wider">
-                <Sparkles className="w-3.5 h-3.5 text-[#C9F24D] animate-spin" /> Speech Recognition
-              </div>
-              {isRecording && (
-                <div className="flex items-center gap-1.5 text-red-500 text-xs font-semibold">
-                  <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping mr-1" />
-                  REC {formatTime(recordTime)}
-                </div>
-              )}
+            <div className="z-10">
+              <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <Utensils className="w-4 h-4 text-[#C9F24D]" /> Log a meal
+              </h2>
+              <p className="mt-1 text-xs text-slate-400">Type what you ate, or tap the mic to say it instead.</p>
             </div>
 
-            {/* Mic button */}
-            <div className="my-8 flex flex-col items-center justify-center z-10">
-              {isProcessing ? (
-                <div className="w-32 h-32 rounded-full border border-slate-800 bg-slate-950/80 flex items-center justify-center flex-col gap-2 shadow-2xl">
-                  <Loader2 className="w-10 h-10 text-[#C9F24D] animate-spin" />
-                  <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400 animate-pulse">Analyzing</span>
-                </div>
-              ) : isRecording ? (
-                <button onClick={stopRecording} className="w-32 h-32 rounded-full bg-gradient-to-tr from-red-600 to-rose-600 hover:scale-105 transition active:scale-95 flex items-center justify-center shadow-[0_0_50px_rgba(239,68,68,0.4)] relative cursor-pointer group">
-                  <span className="absolute inset-0 rounded-full bg-red-600/30 animate-ping pointer-events-none" />
-                  <Square className="w-10 h-10 text-white fill-white group-hover:scale-90 transition-transform" />
-                </button>
-              ) : (
-                <button onClick={startRecording} className="w-32 h-32 rounded-full bg-[#C9F24D] hover:bg-[#D4F56A] hover:scale-105 active:scale-95 transition-all flex items-center justify-center shadow-[0_0_40px_rgba(201,242,77,0.35)] hover:shadow-[0_0_60px_rgba(201,242,77,0.5)] cursor-pointer group relative">
-                  <Mic className="w-12 h-12 text-[#0B0C09] group-hover:scale-110 transition-transform" />
-                </button>
-              )}
-              <h3 className="mt-6 text-lg font-bold text-slate-100">
-                {isRecording ? "Listening..." : isProcessing ? "Resolving ingredients..." : "Log your meal with voice"}
-              </h3>
-              <p className="mt-2 text-xs text-slate-400 max-w-[280px]">
-                {isRecording
-                  ? "Tap the red button to stop recording."
-                  : isProcessing
-                  ? "Whisper is transcribing and the AI is resolving nutrition data..."
-                  : "Tap the mic and say what you ate. E.g. 'I had 200ml Nandini milk and 2 eggs'."}
-              </p>
-            </div>
-
-            {/* Text confirm form */}
-            <form onSubmit={handleTextSubmit} className="w-full mt-auto pt-6 border-t border-slate-900 flex flex-col gap-4 z-10">
-              <div className="flex flex-col gap-1.5 text-left">
-                <label className="text-[10px] uppercase font-bold tracking-wider text-slate-500 flex items-center gap-1.5">
-                  <Utensils className="w-3.5 h-3.5 text-[#C9F24D]" /> Transcript / Manual Input
-                </label>
+            {/* Search-bar style input with mic + send docked in the corner, like a chat composer */}
+            <form onSubmit={handleTextSubmit} className="mt-6 flex flex-col gap-2 z-10">
+              <div className={`relative rounded-2xl border bg-slate-950/80 shadow-inner transition-colors ${isRecording ? "border-red-500/60" : "border-slate-800 focus-within:border-[#C9F24D]/70"}`}>
                 <textarea
                   rows={3}
-                  placeholder="Transcribed voice will appear here, or type manually..."
+                  placeholder="e.g. '200ml Nandini milk and 2 eggs'"
                   value={textQuery}
                   onChange={(e) => setTextQuery(e.target.value)}
                   disabled={isRecording || isProcessing}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3.5 text-xs text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-[#C9F24D]/80 focus:ring-1 focus:ring-[#C9F24D]/20 disabled:opacity-50 resize-none leading-relaxed shadow-inner"
+                  className="w-full bg-transparent p-4 pb-12 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none disabled:opacity-50 resize-none leading-relaxed"
                 />
+
+                <div className="absolute bottom-3 right-3 flex items-center gap-2">
+                  {isRecording && (
+                    <span className="flex items-center gap-1.5 text-red-400 text-[10px] font-mono font-semibold mr-1">
+                      <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                      {formatTime(recordTime)}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isProcessing}
+                    title={isRecording ? "Stop recording" : "Speak instead"}
+                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all flex-shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                      isRecording
+                        ? "bg-red-600 hover:bg-red-500 shadow-[0_0_16px_rgba(239,68,68,0.5)]"
+                        : "bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-[#C9F24D]"
+                    }`}
+                  >
+                    {isRecording ? <Square className="w-3.5 h-3.5 text-white fill-white" /> : <Mic className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isRecording || isProcessing || !textQuery.trim()}
+                    title="Log this meal"
+                    className="w-9 h-9 rounded-full bg-[#C9F24D] hover:bg-[#D4F56A] disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition flex-shrink-0 cursor-pointer"
+                  >
+                    {isProcessing ? <Loader2 className="w-4 h-4 text-[#0B0C09] animate-spin" /> : <ArrowUp className="w-4 h-4 text-[#0B0C09]" />}
+                  </button>
+                </div>
               </div>
-              <button
-                type="submit"
-                disabled={isRecording || isProcessing || !textQuery.trim()}
-                className="w-full bg-[#C9F24D] hover:bg-[#D4F56A] hover:scale-[1.01] active:scale-[0.99] transition-all shadow-lg shadow-[rgba(201,242,77,0.2)] disabled:opacity-40 disabled:hover:scale-100 rounded-xl py-3 text-xs font-bold text-[#0B0C09] flex items-center justify-center gap-2 cursor-pointer"
-              >
-                {isProcessing ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Resolving Macros...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4 text-[#0B0C09]" /> Confirm, Resolve Macros & Log</>
-                )}
-              </button>
+
+              <p className="text-[10px] text-slate-500 pl-1 h-3.5">
+                {isRecording
+                  ? "Listening — tap the square to stop."
+                  : isProcessing
+                  ? "Transcribing and resolving macros..."
+                  : " "}
+              </p>
             </form>
           </div>
 
@@ -1250,7 +1217,7 @@ export default function Dashboard() {
             <div>
               <p className="font-semibold text-slate-300">Tips</p>
               <p className="mt-1 leading-normal">
-                Say brand names naturally — "200ml Nandini milk" or "1 scoop Optimum Nutrition whey".
+                Mention brand names naturally — &ldquo;200ml Nandini milk&rdquo; or &ldquo;1 scoop Optimum Nutrition whey&rdquo; — whether you type or speak them.
                 Save brand preferences via the <span className="text-[#C9F24D] font-semibold">Brands</span> button to lock in exact label macros forever.
               </p>
             </div>
@@ -1461,7 +1428,7 @@ export default function Dashboard() {
                   <Apple className="w-5 h-5 text-slate-600" />
                 </div>
                 <h4 className="text-sm font-bold text-slate-300">No food logged today</h4>
-                <p className="text-xs text-slate-500 mt-1 max-w-[240px]">Speak or type your meals above to see them logged here.</p>
+                <p className="text-xs text-slate-500 mt-1 max-w-[240px]">Type or speak your meals above to see them logged here.</p>
               </div>
             ) : (
               <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
@@ -1523,65 +1490,95 @@ export default function Dashboard() {
 
                       {/* Ingredient breakdown — expandable */}
                       {isExpanded && (
-                        <div className="border-t border-slate-900 px-4 pb-4 pt-3 space-y-2">
-                          {/* Column headers */}
-                          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 text-[9px] uppercase tracking-wider font-bold text-slate-600 pb-1 border-b border-slate-900">
-                            <span>Ingredient</span>
-                            <span className="text-right">Weight</span>
-                            <span className="text-right text-orange-500">kcal</span>
-                            <span className="text-right text-[#C9F24D]">Protein</span>
-                            <span className="text-right text-[#C9F24D]">Carbs</span>
-                            <span className="text-right text-rose-400">Fat</span>
+                        <div className="border-t border-slate-900 px-4 pb-4 pt-3">
+                          {/* ── Desktop / wide screens: full column table ── */}
+                          <div className="hidden sm:block space-y-2">
+                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 text-[9px] uppercase tracking-wider font-bold text-slate-600 pb-1 border-b border-slate-900">
+                              <span>Ingredient</span>
+                              <span className="text-right">Weight</span>
+                              <span className="text-right text-orange-500">kcal</span>
+                              <span className="text-right text-[#C9F24D]">Protein</span>
+                              <span className="text-right text-[#C9F24D]">Carbs</span>
+                              <span className="text-right text-rose-400">Fat</span>
+                            </div>
+
+                            {meal.ingredients.map((ing, idx) => (
+                              <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center text-xs py-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-[#D4F56A] flex-shrink-0" />
+                                  <div className="min-w-0">
+                                    <span className="text-slate-200 font-medium capitalize truncate block">{ing.name}</span>
+                                    {ing.brand && (
+                                      <span className="text-[9px] text-[#C9F24D] flex items-center gap-0.5">
+                                        <Tag className="w-2.5 h-2.5" />{ing.brand}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-slate-500 font-mono text-[10px] text-right">{ing.weight_g}g</span>
+                                <span className="text-orange-300 font-mono text-[10px] text-right font-semibold">
+                                  {macroActual(ing.calories_per_100g, ing.weight_g)}
+                                </span>
+                                <span className="text-[#D4F56A] font-mono text-[10px] text-right">
+                                  {macroActual(ing.protein_per_100g, ing.weight_g)}g
+                                </span>
+                                <span className="text-cyan-300 font-mono text-[10px] text-right">
+                                  {macroActual(ing.carbs_per_100g, ing.weight_g)}g
+                                </span>
+                                <span className="text-rose-300 font-mono text-[10px] text-right">
+                                  {macroActual(ing.fat_per_100g, ing.weight_g)}g
+                                </span>
+                              </div>
+                            ))}
+
+                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center pt-2 mt-1 border-t border-slate-900">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
+                              <span />
+                              <span className="text-orange-400 font-mono text-[10px] font-bold text-right">{Math.round(meal.macros.calories)}</span>
+                              <span className="text-[#C9F24D] font-mono text-[10px] font-bold text-right">{meal.macros.protein}g</span>
+                              <span className="text-[#C9F24D] font-mono text-[10px] font-bold text-right">{meal.macros.carbs}g</span>
+                              <span className="text-rose-400 font-mono text-[10px] font-bold text-right">{meal.macros.fat}g</span>
+                            </div>
                           </div>
 
-                          {meal.ingredients.map((ing, idx) => (
-                            <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center text-xs py-1">
-                              {/* Name + brand */}
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <span className="w-1.5 h-1.5 rounded-full bg-[#D4F56A] flex-shrink-0" />
-                                <div className="min-w-0">
-                                  <span className="text-slate-200 font-medium capitalize truncate block">{ing.name}</span>
-                                  {ing.brand && (
-                                    <span className="text-[9px] text-[#C9F24D] flex items-center gap-0.5">
-                                      <Tag className="w-2.5 h-2.5" />{ing.brand}
-                                    </span>
-                                  )}
+                          {/* ── Mobile: stacked cards — six columns can't fit a phone width,
+                              so each ingredient gets a name+weight line and a wrapping row
+                              of labeled macro badges instead of a cramped grid. ── */}
+                          <div className="sm:hidden space-y-3">
+                            {meal.ingredients.map((ing, idx) => (
+                              <div key={idx} className="space-y-1 pb-2 border-b border-slate-900/80 last:border-b-0 last:pb-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#D4F56A] flex-shrink-0" />
+                                    <div className="min-w-0">
+                                      <span className="text-slate-200 font-medium capitalize text-xs block">{ing.name}</span>
+                                      {ing.brand && (
+                                        <span className="text-[9px] text-[#C9F24D] flex items-center gap-0.5">
+                                          <Tag className="w-2.5 h-2.5" />{ing.brand}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <span className="text-slate-500 font-mono text-[10px] flex-shrink-0 pt-0.5">{ing.weight_g}g</span>
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 pl-3 text-[10px] font-mono">
+                                  <span className="text-orange-300 font-semibold">{macroActual(ing.calories_per_100g, ing.weight_g)} kcal</span>
+                                  <span className="text-[#D4F56A]">P {macroActual(ing.protein_per_100g, ing.weight_g)}g</span>
+                                  <span className="text-cyan-300">C {macroActual(ing.carbs_per_100g, ing.weight_g)}g</span>
+                                  <span className="text-rose-300">F {macroActual(ing.fat_per_100g, ing.weight_g)}g</span>
                                 </div>
                               </div>
+                            ))}
 
-                              {/* Weight */}
-                              <span className="text-slate-500 font-mono text-[10px] text-right">{ing.weight_g}g</span>
-
-                              {/* kcal */}
-                              <span className="text-orange-300 font-mono text-[10px] text-right font-semibold">
-                                {macroActual(ing.calories_per_100g, ing.weight_g)}
-                              </span>
-
-                              {/* Protein */}
-                              <span className="text-[#D4F56A] font-mono text-[10px] text-right">
-                                {macroActual(ing.protein_per_100g, ing.weight_g)}g
-                              </span>
-
-                              {/* Carbs */}
-                              <span className="text-cyan-300 font-mono text-[10px] text-right">
-                                {macroActual(ing.carbs_per_100g, ing.weight_g)}g
-                              </span>
-
-                              {/* Fat */}
-                              <span className="text-rose-300 font-mono text-[10px] text-right">
-                                {macroActual(ing.fat_per_100g, ing.weight_g)}g
-                              </span>
+                            <div className="flex items-center justify-between pt-2 mt-1 border-t border-slate-900">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
+                              <div className="flex flex-wrap justify-end gap-x-3 gap-y-0.5 text-[10px] font-mono font-bold">
+                                <span className="text-orange-400">{Math.round(meal.macros.calories)} kcal</span>
+                                <span className="text-[#C9F24D]">P {meal.macros.protein}g</span>
+                                <span className="text-[#C9F24D]">C {meal.macros.carbs}g</span>
+                                <span className="text-rose-400">F {meal.macros.fat}g</span>
+                              </div>
                             </div>
-                          ))}
-
-                          {/* Totals row */}
-                          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-3 items-center pt-2 mt-1 border-t border-slate-900">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total</span>
-                            <span />
-                            <span className="text-orange-400 font-mono text-[10px] font-bold text-right">{Math.round(meal.macros.calories)}</span>
-                            <span className="text-[#C9F24D] font-mono text-[10px] font-bold text-right">{meal.macros.protein}g</span>
-                            <span className="text-[#C9F24D] font-mono text-[10px] font-bold text-right">{meal.macros.carbs}g</span>
-                            <span className="text-rose-400 font-mono text-[10px] font-bold text-right">{meal.macros.fat}g</span>
                           </div>
                         </div>
                       )}
@@ -2445,42 +2442,6 @@ export default function Dashboard() {
                 <input type="text" required value={editName} onChange={(e) => setEditName(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]" />
               </div>
-
-              {/* STT Engine toggle — only shown in non-production / local dev environments */}
-              {sttSettings?.allow_local_choice && (
-                <div className="bg-slate-950/60 border border-slate-800 rounded-2xl p-4 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
-                      <Mic className="w-3.5 h-3.5 text-[#C9F24D]" /> Speech-to-Text Engine
-                    </label>
-                    <span className="text-[9px] font-bold text-amber-400 bg-amber-950/40 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Dev only</span>
-                  </div>
-                  <p className="text-[10px] text-slate-500 leading-relaxed">
-                    Choose how voice recordings are transcribed on this machine. This option is hidden in production — deployed apps always use the cloud engine.
-                  </p>
-                  <div className="space-y-1.5">
-                    {sttSettings.modes.map((m) => (
-                      <label
-                        key={m.value}
-                        className={`flex items-start gap-2.5 p-2.5 rounded-xl border cursor-pointer transition ${sttSettings.current_mode === m.value ? "bg-[#C9F24D]/10 border-[#C9F24D]/40" : "bg-slate-900/50 border-slate-800 hover:border-slate-700"}`}
-                      >
-                        <input
-                          type="radio"
-                          name="stt-mode"
-                          checked={sttSettings.current_mode === m.value}
-                          onChange={() => handleSttModeChange(m.value)}
-                          disabled={sttSaving}
-                          className="mt-0.5 accent-[#C9F24D]"
-                        />
-                        <div>
-                          <p className="text-[11px] font-semibold text-slate-200">{m.label}</p>
-                          <p className="text-[10px] text-slate-500 leading-snug">{m.description}</p>
-                        </div>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">

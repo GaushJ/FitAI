@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Utensils, Mic, Sparkles } from "lucide-react";
 
 const ACCENT = "#C9F24D";
 const BG = "#0B0C09";
@@ -61,7 +62,6 @@ export default function LandingPage() {
 
   const fmt = (n: number) => n.toLocaleString("en-US");
 
-  const heights = [0.4,0.7,1,0.55,0.85,0.3,0.95,0.6,0.45,0.8,1,0.5,0.7,0.35,0.9,0.6,0.45,0.75,1,0.4,0.65,0.85,0.5,0.3];
   const pal = ["rgba(255,255,255,0.05)","rgba(201,242,77,0.3)","rgba(201,242,77,0.6)","#C9F24D"];
   let seed = 7;
   const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
@@ -84,8 +84,8 @@ export default function LandingPage() {
         ::-webkit-scrollbar-thumb{background:#26281e;border-radius:4px}
         ::selection{background:#C9F24D;color:#0B0C09}
         @keyframes fvUp{from{opacity:0;transform:translateY(34px)}to{opacity:1;transform:none}}
-        @keyframes fvWave{0%,100%{transform:scaleY(0.25)}50%{transform:scaleY(1)}}
         @keyframes fvPulse{0%,100%{box-shadow:0 0 0 0 rgba(201,242,77,0.45)}70%{box-shadow:0 0 0 22px rgba(201,242,77,0)}}
+        @keyframes fvBlink{0%,49%{opacity:1}50%,100%{opacity:0}}
         @keyframes fvFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
         @keyframes fvMarq{to{transform:translateX(-50%)}}
         .fv-h1{animation:fvUp 1s cubic-bezier(.16,1,.3,1) both}
@@ -134,9 +134,9 @@ export default function LandingPage() {
         <div className="fv-nav-inner" style={{ maxWidth: 1240, margin: "0 auto", padding: "0 32px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 30, height: 30, borderRadius: 9, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <MicIcon size={16} color={BG} />
+              <Utensils size={16} color={BG} />
             </div>
-            <span className="fv-nav-brand-text" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>FitVoice</span>
+            <span className="fv-nav-brand-text" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>Macronaut</span>
           </div>
           <div className="fv-nav-actions" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button onClick={() => router.push("/login")} style={{ background: "none", border: "none", color: "#C8CABF", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "8px 12px" }}>Sign in</button>
@@ -152,13 +152,13 @@ export default function LandingPage() {
           <div>
             <div className="fv-h1 fv-d1" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(201,242,77,0.10)", border: "1px solid rgba(201,242,77,0.28)", borderRadius: 100, padding: "6px 14px", fontSize: 12, fontWeight: 600, color: ACCENT, letterSpacing: "0.02em", marginBottom: 28 }}>
               <span style={{ width: 7, height: 7, borderRadius: "50%", background: ACCENT, display: "inline-block" }} />
-              Voice-first macro tracking
+              AI-powered macro tracking
             </div>
             <h1 className="fv-h1 fv-d1" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 800, fontSize: "clamp(48px,6vw,74px)", lineHeight: 0.96, letterSpacing: "-0.03em", marginBottom: 24 }}>
-              Just say<br />what you<br /><span style={{ color: ACCENT }}>ate.</span>
+              Know<br />exactly<br />what you <span style={{ color: ACCENT }}>ate.</span>
             </h1>
             <p className="fv-h1 fv-d2" style={{ fontSize: 19, lineHeight: 1.55, color: "#A2A498", maxWidth: 440, marginBottom: 36 }}>
-              Speak a meal out loud and AI resolves the exact macros — by brand, portion and prep. No searching. No weighing in your head. Just talk.
+              Type or say what you ate and AI resolves the exact macros — by brand, portion and prep. No searching food databases. No weighing in your head.
             </p>
             <div className="fv-h1 fv-d3" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 30 }}>
               <button className="btn-primary" onClick={() => router.push("/login")}>
@@ -173,29 +173,18 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* voice card */}
+          {/* search-bar card */}
           <div className="fv-h1 fv-d3" style={{ position: "relative" }}>
             <div style={{ background: "linear-gradient(160deg,#16180F,#0E0F0A)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 26, padding: 28, boxShadow: "0 40px 90px -30px rgba(0,0,0,0.8)" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: "#FF5E5E", display: "inline-block" }} />
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#A2A498" }}>Recording</span>
+              <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6E7066", marginBottom: 10 }}>Log a meal</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 16, padding: "12px 12px 12px 18px", marginBottom: 24 }}>
+                <p style={{ flex: 1, fontSize: 15, color: "#E8EAE0", lineHeight: 1.4, margin: 0 }}>
+                  Two scrambled eggs, 80 grams of oats and a banana
+                  <span style={{ display: "inline-block", width: 2, height: 15, background: ACCENT, marginLeft: 3, verticalAlign: "-2px", animation: "fvBlink 1s step-end infinite" }} />
+                </p>
+                <div style={{ width: 38, height: 38, borderRadius: "50%", background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: "fvPulse 2.2s ease-out infinite" }}>
+                  <Mic size={16} color={BG} />
                 </div>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#6E7066" }}>00:04</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 24 }}>
-                <div style={{ width: 60, height: 60, borderRadius: "50%", background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, animation: "fvPulse 2.2s ease-out infinite" }}>
-                  <MicIcon size={24} color={BG} />
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, height: 54, flex: 1 }}>
-                  {heights.map((h, i) => (
-                    <div key={i} style={{ flex: 1, height: "100%", background: i % 3 === 0 ? ACCENT : "rgba(201,242,77,0.45)", borderRadius: 3, transformOrigin: "center", animation: `fvWave ${0.7 + (i % 5) * 0.12}s ease-in-out ${i * 0.05}s infinite`, transform: `scaleY(${h})` }} />
-                  ))}
-                </div>
-              </div>
-              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6E7066", marginBottom: 6 }}>You said</p>
-                <p style={{ fontSize: 15, color: "#E8EAE0", lineHeight: 1.4 }}>"Two scrambled eggs, 80 grams of oats and a banana."</p>
               </div>
               <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#6E7066", marginBottom: 10, display: "flex", alignItems: "center", gap: 7 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: ACCENT }} /> AI resolved
@@ -238,7 +227,7 @@ export default function LandingPage() {
         </div>
         <div className="fv-grid-3" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 22 }}>
           {[
-            { n:"01", t:"Speak your meal",    d:"Tap the mic and say exactly what you ate — brand, quantity, prep. Or just type it.",          path:"M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3ZM19 10v2a7 7 0 0 1-14 0v-2M12 19v3" },
+            { n:"01", t:"Log your meal",      d:"Type what you ate, or tap the mic and say it — brand, quantity, prep, all understood.",        path:"M21 21l-4.34-4.34M18.67 10.67a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" },
             { n:"02", t:"AI resolves macros", d:"The pipeline extracts ingredients, matches your brands and calculates exact macros.",           path:"M12 2a9 9 0 1 0 9 9M12 2v9l6 4" },
             { n:"03", t:"Track & keep streaks",d:"Daily totals, weekly charts and a 90-day heatmap update the instant you log.",              path:"M3 17l6-6 4 4 8-8M21 7v6h-6" },
           ].map((s, i) => (
@@ -254,13 +243,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── VOICE FEATURE ── */}
+      {/* ── RESOLUTION FEATURE ── */}
       <section style={{ background: "#0E0F0A", borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="fv-split fv-feature-inner" style={{ maxWidth: 1240, margin: "0 auto", padding: "110px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
           <div data-reveal>
-            <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>The voice engine</p>
-            <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,3.5vw,48px)", lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 22 }}>Talking is faster<br />than typing.</h2>
-            <p style={{ fontSize: 17, lineHeight: 1.6, color: "#A2A498", marginBottom: 32, maxWidth: 460 }}>Real-time transcription captures exactly what you said, then an AI pipeline resolves brands, portion sizes and prep methods into precise macros — filling gaps from the web when it needs to.</p>
+            <p style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: ACCENT, marginBottom: 16 }}>The resolution engine</p>
+            <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: "clamp(28px,3.5vw,48px)", lineHeight: 1.04, letterSpacing: "-0.03em", marginBottom: 22 }}>One line in,<br />exact macros out.</h2>
+            <p style={{ fontSize: 17, lineHeight: 1.6, color: "#A2A498", marginBottom: 32, maxWidth: 460 }}>Type a quick description — or speak it — and an AI pipeline resolves brands, portion sizes and prep methods into precise macros, filling gaps from the web when it needs to.</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
               {[
                 { t:"Brand-aware",    d:"Knows your usual whey, your rice, your peanut butter." },
@@ -283,12 +272,12 @@ export default function LandingPage() {
             <div style={{ background: "linear-gradient(160deg,#17190F,#0C0D08)", border: "1px solid rgba(255,255,255,0.09)", borderRadius: 24, padding: 30 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 26 }}>
                 <div style={{ width: 46, height: 46, borderRadius: 13, background: "rgba(201,242,77,0.12)", border: "1px solid rgba(201,242,77,0.28)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <MicIcon size={20} color={ACCENT} />
+                  <Sparkles size={20} color={ACCENT} />
                 </div>
-                <div><p style={{ fontWeight: 700, fontSize: 15 }}>Live transcription</p><p style={{ fontSize: 13, color: "#8E9085" }}>Near-zero latency</p></div>
+                <div><p style={{ fontWeight: 700, fontSize: 15 }}>AI resolution</p><p style={{ fontSize: 13, color: "#8E9085" }}>Near-zero latency</p></div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                {["Captures your speech as you talk","Splits the meal into ingredients","Matches your preferred brands automatically"].map((t, i) => (
+                {["Understands what you typed or said","Splits the meal into ingredients","Matches your preferred brands automatically"].map((t, i) => (
                   <React.Fragment key={i}>
                     <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                       <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, color: "#6E7066", paddingTop: 2 }}>0{i+1}</span>
@@ -379,7 +368,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 600, fontSize: "clamp(18px,2.2vw,28px)", lineHeight: 1.32, letterSpacing: "-0.02em", color: "#F4F5EF", marginBottom: 30 }}>
-            "I've tried every macro tracker. FitVoice is the first one I actually use every day — because I just <span style={{ color: ACCENT }}>talk</span> to it."
+            &ldquo;I&apos;ve tried every macro tracker. Macronaut is the first one I actually use every day — because logging <span style={{ color: ACCENT }}>takes five seconds</span>.&rdquo;
           </p>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: "50%", background: ACCENT, color: BG, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>A</div>
@@ -398,7 +387,7 @@ export default function LandingPage() {
           <h2 style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 800, fontSize: "clamp(36px,5vw,68px)", lineHeight: 0.98, letterSpacing: "-0.03em", marginBottom: 24 }}>
             Your macros,<br /><span style={{ color: ACCENT }}>resolved.</span>
           </h2>
-          <p style={{ fontSize: 19, color: "#A2A498", marginBottom: 38, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>Speak a meal and see exact macros in under five seconds. Free to start, no setup required.</p>
+          <p style={{ fontSize: 19, color: "#A2A498", marginBottom: 38, maxWidth: 480, marginLeft: "auto", marginRight: "auto" }}>Log a meal and see exact macros in under five seconds. Free to start, no setup required.</p>
           <button className="btn-primary" style={{ fontSize: 17, padding: "18px 34px", borderRadius: 15 }} onClick={() => router.push("/login")}>
             Start tracking free <ArrowIcon size={19} />
           </button>
@@ -414,11 +403,11 @@ export default function LandingPage() {
         <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{ width: 26, height: 26, borderRadius: 8, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <MicIcon size={14} color={BG} />
+              <Utensils size={14} color={BG} />
             </div>
-            <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 15 }}>FitVoice</span>
+            <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 15 }}>Macronaut</span>
           </div>
-          <p style={{ fontSize: 13, color: "#5E6056" }}>© 2026 FitVoice · Speak it. Track it. Keep the streak.</p>
+          <p style={{ fontSize: 13, color: "#5E6056" }}>© 2026 Macronaut · Log it. Track it. Keep the streak.</p>
         </div>
       </footer>
     </div>
@@ -427,15 +416,6 @@ export default function LandingPage() {
 
 // ── Inline SVG helpers ────────────────────────────────────────────────────────
 
-function MicIcon({ size = 24, color = "currentColor" }: { size?: number; color?: string }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="22" />
-    </svg>
-  );
-}
 
 function ArrowIcon({ size = 18 }: { size?: number }) {
   return (
