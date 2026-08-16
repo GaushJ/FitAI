@@ -7,7 +7,8 @@ import {
   Loader2, Utensils, Calendar, Apple, TrendingUp, Sparkles,
   Tag, Trash2, ChevronDown, ChevronUp, Upload, X, BookMarked,
   Plus, KeyRound, Eye, EyeOff, ChevronDown as CaretDown, ShieldCheck,
-  LogOut, BarChart2, Zap, Sliders, RefreshCw, Pencil,
+  LogOut, BarChart2, Zap, Sliders, RefreshCw, Pencil, Menu,
+  Bookmark, Save,
 } from "lucide-react";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────────
@@ -60,10 +61,19 @@ interface APIKeyInfo {
 interface FrequentMeal {
   id: number;
   display_name: string;
-  ingredients: Array<{ name: string; grams?: number; calories?: number; protein?: number; carbs?: number; fat?: number; [key: string]: any }>;
+  ingredients: Ingredient[];
   macros: { calories: number; protein: number; carbs: number; fat: number };
   log_count: number;
   last_logged: string;
+}
+
+interface SavedMeal {
+  id: number;
+  name: string;
+  ingredients: Ingredient[];
+  macros: { calories: number; protein: number; carbs: number; fat: number };
+  created_at: string;
+  updated_at: string;
 }
 
 
@@ -181,6 +191,9 @@ export default function Dashboard() {
   const [errorMsg, setErrorMsg]         = useState("");
   const [successMsg, setSuccessMsg]     = useState("");
 
+  // ── Mobile nav (hamburger menu)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
   // ── Settings drawer
   const [showConfig, setShowConfig]   = useState(false);
   const [editName, setEditName]       = useState(profile.name);
@@ -250,6 +263,20 @@ export default function Dashboard() {
   const [portionMeal, setPortionMeal]             = useState<FrequentMeal | null>(null);
   const [portionGrams, setPortionGrams]           = useState<Record<string, number>>({});
 
+  // ── Saved meals
+  const [savedMeals, setSavedMeals]               = useState<SavedMeal[]>([]);
+  const [savedMealActionId, setSavedMealActionId] = useState<number | null>(null);
+
+  // ── Saved meal editor modal (create new / edit existing before logging)
+  const [savedMealEditor, setSavedMealEditor]     = useState<{ mode: "new" | "edit"; id: number | null } | null>(null);
+  const [editorMealName, setEditorMealName]       = useState("");
+  const [editorIngredients, setEditorIngredients] = useState<Ingredient[]>([]);
+  const [editorSaving, setEditorSaving]           = useState(false);
+  const [editorMsg, setEditorMsg]                 = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [newIngName, setNewIngName]               = useState("");
+  const [newIngBrand, setNewIngBrand]             = useState("");
+  const [newIngWeight, setNewIngWeight]           = useState(100);
+  const [resolvingIngredient, setResolvingIngredient] = useState(false);
 
   // ── Refs
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -318,6 +345,13 @@ export default function Dashboard() {
     } catch { /* silent */ }
   };
 
+  const fetchSavedMeals = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/saved-meals`, { headers: authHeaders() });
+      if (res.ok) setSavedMeals(await res.json());
+    } catch { /* silent */ }
+  };
+
 
 
   // ── Logout helper ──────────────────────────────────────────────────────────
@@ -337,6 +371,7 @@ export default function Dashboard() {
     fetchApiKeys();
     fetchSttSettings();
     fetchFrequentMeals();
+    fetchSavedMeals();
 
   }, []);
 
@@ -742,7 +777,7 @@ export default function Dashboard() {
     // Pre-fill with current gram values
     const initial: Record<string, number> = {};
     meal.ingredients.forEach((ing) => {
-      if (ing.name) initial[ing.name] = ing.grams ?? 100;
+      if (ing.name) initial[ing.name] = ing.weight_g ?? 100;
     });
     setPortionGrams(initial);
     setPortionMeal(meal);
@@ -753,6 +788,185 @@ export default function Dashboard() {
       await fetch(`${API_BASE}/api/frequent-meals/${mealId}`, { method: "DELETE", headers: authHeaders() });
       setFrequentMeals((prev) => prev.filter((m) => m.id !== mealId));
     } catch { /* silent */ }
+  };
+
+  // ─── Saved meals ─────────────────────────────────────────────────────────
+
+  // One-tap log using the meal exactly as saved (no edits).
+  const handleLogSavedMeal = async (meal: SavedMeal) => {
+    setSavedMealActionId(meal.id);
+    setErrorMsg(""); setSuccessMsg("");
+    try {
+      const res = await fetch(`${API_BASE}/api/saved-meals/${meal.id}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Logging failed");
+      const data = await res.json();
+      setSuccessMsg(`Logged "${data.name}" — ${Math.round(data.macros?.calories ?? 0)} kcal`);
+      await fetchDashboardData();
+      fetchFrequentMeals();
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to log meal.");
+    } finally {
+      setSavedMealActionId(null);
+    }
+  };
+
+  const handleDeleteSavedMeal = async (mealId: number) => {
+    try {
+      await fetch(`${API_BASE}/api/saved-meals/${mealId}`, { method: "DELETE", headers: authHeaders() });
+      setSavedMeals((prev) => prev.filter((m) => m.id !== mealId));
+    } catch { /* silent */ }
+  };
+
+  // Opens the editor to build a brand-new saved meal from scratch.
+  const openNewSavedMeal = () => {
+    setSavedMealEditor({ mode: "new", id: null });
+    setEditorMealName("");
+    setEditorIngredients([]);
+    setNewIngName(""); setNewIngBrand(""); setNewIngWeight(100);
+    setEditorMsg(null);
+  };
+
+  // Opens the editor pre-filled with an existing saved meal — quantities can be
+  // changed, ingredients added/removed, before logging or saving the template.
+  const openEditSavedMeal = (meal: SavedMeal) => {
+    setSavedMealEditor({ mode: "edit", id: meal.id });
+    setEditorMealName(meal.name);
+    setEditorIngredients(meal.ingredients.map((ing) => ({ ...ing })));
+    setNewIngName(""); setNewIngBrand(""); setNewIngWeight(100);
+    setEditorMsg(null);
+  };
+
+  // Lets a just-tracked meal (or a past meal log) be saved as a reusable template —
+  // e.g. "I have this omelette + protein shake every day" → save it once, reuse it.
+  const openSaveAsMeal = (ingredients: Ingredient[], suggestedName: string) => {
+    setSavedMealEditor({ mode: "new", id: null });
+    setEditorMealName(suggestedName);
+    setEditorIngredients(ingredients.map((ing) => ({ ...ing })));
+    setNewIngName(""); setNewIngBrand(""); setNewIngWeight(100);
+    setEditorMsg(null);
+  };
+
+  const closeSavedMealEditor = () => {
+    setSavedMealEditor(null);
+    setEditorMsg(null);
+  };
+
+  const updateEditorIngredientWeight = (idx: number, grams: number) => {
+    setEditorIngredients((prev) => prev.map((ing, i) => (i === idx ? { ...ing, weight_g: grams } : ing)));
+  };
+
+  const removeEditorIngredient = (idx: number) => {
+    setEditorIngredients((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  // Resolves macros for a freshly typed ingredient (via the same resolver used
+  // elsewhere in the app) and adds it to the in-progress meal.
+  const handleAddEditorIngredient = async () => {
+    if (!newIngName.trim()) return;
+    setResolvingIngredient(true);
+    setEditorMsg(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/resolve-ingredient`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders(), ...apiKeyHeaders() },
+        body: JSON.stringify({ name: newIngName.trim(), brand: newIngBrand.trim(), weight_g: newIngWeight }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Could not resolve ingredient");
+      const macros = await res.json();
+      setEditorIngredients((prev) => [
+        ...prev,
+        {
+          name: newIngName.trim(),
+          brand: newIngBrand.trim() || null,
+          weight_g: newIngWeight,
+          calories_per_100g: macros.calories_per_100g,
+          protein_per_100g: macros.protein_per_100g,
+          carbs_per_100g: macros.carbs_per_100g,
+          fat_per_100g: macros.fat_per_100g,
+        },
+      ]);
+      setNewIngName(""); setNewIngBrand(""); setNewIngWeight(100);
+    } catch (err: any) {
+      setEditorMsg({ type: "err", text: err.message || "Failed to add ingredient." });
+    } finally {
+      setResolvingIngredient(false);
+    }
+  };
+
+  // Persists the template (creates it if new, updates name/ingredients if editing).
+  const handleSaveMealTemplate = async (): Promise<SavedMeal | null> => {
+    if (!editorMealName.trim()) {
+      setEditorMsg({ type: "err", text: "Give this meal a name." });
+      return null;
+    }
+    if (editorIngredients.length === 0) {
+      setEditorMsg({ type: "err", text: "Add at least one ingredient." });
+      return null;
+    }
+    setEditorSaving(true);
+    setEditorMsg(null);
+    try {
+      const isNew = savedMealEditor?.mode === "new";
+      const url = isNew ? `${API_BASE}/api/saved-meals` : `${API_BASE}/api/saved-meals/${savedMealEditor?.id}`;
+      const res = await fetch(url, {
+        method: isNew ? "POST" : "PUT",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ name: editorMealName.trim(), ingredients: editorIngredients }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Failed to save meal.");
+      const saved: SavedMeal = await res.json();
+      await fetchSavedMeals();
+      setEditorMsg({ type: "ok", text: "Meal saved." });
+      if (isNew) setSavedMealEditor({ mode: "edit", id: saved.id });
+      return saved;
+    } catch (err: any) {
+      setEditorMsg({ type: "err", text: err.message || "Failed to save meal." });
+      return null;
+    } finally {
+      setEditorSaving(false);
+    }
+  };
+
+  // Logs the meal with whatever ingredients/quantities are currently in the
+  // editor. If it's a brand-new (unsaved) meal, saves the template first.
+  const handleSaveAndLog = async () => {
+    if (!editorMealName.trim()) {
+      setEditorMsg({ type: "err", text: "Give this meal a name." });
+      return;
+    }
+    if (editorIngredients.length === 0) {
+      setEditorMsg({ type: "err", text: "Add at least one ingredient." });
+      return;
+    }
+    setEditorSaving(true);
+    setErrorMsg(""); setSuccessMsg("");
+    try {
+      let mealId = savedMealEditor?.id ?? null;
+      if (savedMealEditor?.mode === "new") {
+        const saved = await handleSaveMealTemplate();
+        if (!saved) return;
+        mealId = saved.id;
+      }
+      const res = await fetch(`${API_BASE}/api/saved-meals/${mealId}/log`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ ingredients: editorIngredients }),
+      });
+      if (!res.ok) throw new Error((await res.json()).detail || "Logging failed");
+      const data = await res.json();
+      setSuccessMsg(`Logged "${data.name}" — ${Math.round(data.macros?.calories ?? 0)} kcal`);
+      closeSavedMealEditor();
+      await fetchDashboardData();
+      fetchFrequentMeals();
+    } catch (err: any) {
+      setEditorMsg({ type: "err", text: err.message || "Failed to log meal." });
+    } finally {
+      setEditorSaving(false);
+    }
   };
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -779,81 +993,157 @@ export default function Dashboard() {
       <div className="absolute top-1/3 right-1/4 w-[35rem] h-[35rem] bg-[#C9F24D]/5 rounded-full blur-[100px] pointer-events-none" />
 
       {/* ── Header ── */}
-      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
-            <Utensils className="w-5 h-5 text-[#0B0C09]" />
+      <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
+              <Utensils className="w-5 h-5 text-[#0B0C09]" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
+                FitVoice <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
+              </h1>
+              <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
-              FitVoice <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
-            </h1>
-            <p className="text-[10px] text-slate-500">Voice-Driven Micro Macro Resolution</p>
+
+          {/* Hamburger toggle — mobile only */}
+          <button
+            onClick={() => setMobileNavOpen((open) => !open)}
+            className="sm:hidden flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 flex items-center justify-center text-slate-300 hover:text-[#F4F5EF] transition"
+            title="Menu"
+            aria-label="Toggle navigation menu"
+            aria-expanded={mobileNavOpen}
+          >
+            {mobileNavOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+
+          <div className="hidden sm:flex items-center gap-2 sm:gap-3">
+            <div className="flex-shrink-0 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
+              <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
+              <span className="text-slate-300">Streak:</span>
+              <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+            </div>
+
+            {/* API Keys button */}
+            <button
+              onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="Manage API Keys"
+            >
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>API Keys</span>
+              {apiKeys.filter((k) => !k.is_set).length > 0 && (
+                <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  {apiKeys.filter((k) => !k.is_set).length} missing
+                </span>
+              )}
+            </button>
+
+            {/* Brand preferences button */}
+            <button
+              onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="Brand Preferences"
+            >
+              <BookMarked className="w-4 h-4 text-[#C9F24D]" />
+              <span>Brands</span>
+              {brandPrefs.length > 0 && (
+                <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
+              )}
+            </button>
+
+            {/* Progress / history page */}
+            <button
+              onClick={() => router.push("/progress")}
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+              title="View Progress"
+            >
+              <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
+              <span>Progress</span>
+            </button>
+
+            <button
+              onClick={() => setShowConfig(true)}
+              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
+              title="Configure Targets"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
+              title={`Sign out (${getStoredUser()?.username ?? ""})`}
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto sm:overflow-visible -mx-4 px-4 sm:mx-0 sm:px-0 pb-1 sm:pb-0">
-          <div className="flex-shrink-0 bg-slate-900/80 border border-slate-800/80 rounded-full px-4 py-1.5 flex items-center gap-2 text-xs font-semibold">
-            <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
-            <span className="text-slate-300">Streak:</span>
-            <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+        {/* Mobile nav — collapsed into hamburger menu */}
+        {mobileNavOpen && (
+          <div className="sm:hidden mt-3 flex flex-col gap-2">
+            <div className="bg-slate-900/80 border border-slate-800/80 rounded-xl px-4 py-2 flex items-center gap-2 text-xs font-semibold">
+              <Flame className="w-4 h-4 text-orange-500 animate-pulse" />
+              <span className="text-slate-300">Streak:</span>
+              <span className="text-orange-400 font-bold text-sm">{profile.current_streak} days</span>
+            </div>
+
+            {/* API Keys button */}
+            <button
+              onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <KeyRound className="w-4 h-4 text-amber-400" />
+              <span>API Keys</span>
+              {apiKeys.filter((k) => !k.is_set).length > 0 && (
+                <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                  {apiKeys.filter((k) => !k.is_set).length} missing
+                </span>
+              )}
+            </button>
+
+            {/* Brand preferences button */}
+            <button
+              onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <BookMarked className="w-4 h-4 text-[#C9F24D]" />
+              <span>Brands</span>
+              {brandPrefs.length > 0 && (
+                <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
+              )}
+            </button>
+
+            {/* Progress / history page */}
+            <button
+              onClick={() => { setMobileNavOpen(false); router.push("/progress"); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
+            >
+              <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
+              <span>Progress</span>
+            </button>
+
+            <button
+              onClick={() => { setShowConfig(true); setMobileNavOpen(false); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-sm font-semibold text-slate-400 hover:text-slate-200 transition"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Configure Targets</span>
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={() => { setMobileNavOpen(false); handleLogout(); }}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition text-sm font-semibold text-slate-500 hover:text-red-400"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>Sign out ({getStoredUser()?.username ?? ""})</span>
+            </button>
           </div>
-
-          {/* API Keys button */}
-          <button
-            onClick={() => { setShowKeysModal(true); setKeyMsg(null); setSelectedProvider(""); setKeyInput(""); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="Manage API Keys"
-          >
-            <KeyRound className="w-4 h-4 text-amber-400" />
-            <span className="hidden sm:inline">API Keys</span>
-            {apiKeys.filter((k) => !k.is_set).length > 0 && (
-              <span className="bg-[#FF8A4C] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">
-                {apiKeys.filter((k) => !k.is_set).length} missing
-              </span>
-            )}
-          </button>
-
-          {/* Brand preferences button */}
-          <button
-            onClick={() => { setShowBrandModal(true); setBrandMsg(null); setExtractedMacros(null); }}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="Brand Preferences"
-          >
-            <BookMarked className="w-4 h-4 text-[#C9F24D]" />
-            <span className="hidden sm:inline">Brands</span>
-            {brandPrefs.length > 0 && (
-              <span className="bg-[#C9F24D] text-[#0B0C09] text-[9px] font-bold px-1.5 py-0.5 rounded-full">{brandPrefs.length}</span>
-            )}
-          </button>
-
-          {/* Progress / history page */}
-          <button
-            onClick={() => router.push("/progress")}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-[#F4F5EF] transition"
-            title="View Progress"
-          >
-            <BarChart2 className="w-4 h-4 text-[#C9F24D]" />
-            <span className="hidden sm:inline">Progress</span>
-          </button>
-
-          <button
-            onClick={() => setShowConfig(true)}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-slate-800 transition border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200"
-            title="Configure Targets"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-
-          {/* Logout */}
-          <button
-            onClick={handleLogout}
-            className="flex-shrink-0 w-10 h-10 rounded-xl bg-slate-900/80 hover:bg-red-900/40 border border-slate-800 hover:border-red-900 transition flex items-center justify-center text-slate-500 hover:text-red-400"
-            title={`Sign out (${getStoredUser()?.username ?? ""})`}
-          >
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
+        )}
       </header>
 
       {/* ── Main grid ── */}
@@ -1087,6 +1377,74 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* ── Saved Meals ── */}
+          <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-5 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-[#C9F24D]" /> Saved Meals
+              </h2>
+              <button
+                onClick={openNewSavedMeal}
+                className="flex items-center gap-1 text-[10px] font-bold text-[#0B0C09] bg-[#C9F24D] hover:bg-[#D4F56A] rounded-lg px-2.5 py-1.5 transition cursor-pointer"
+              >
+                <Plus className="w-3 h-3" /> New
+              </button>
+            </div>
+
+            {savedMeals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 px-4 text-center border border-dashed border-slate-900 rounded-2xl">
+                <p className="text-xs text-slate-500 max-w-[280px]">
+                  Save meals you eat often — e.g. "Omelette + Protein Shake" — then log them in one tap and tweak quantities or add ingredients each time.
+                </p>
+              </div>
+            ) : (
+              <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-slate-800">
+                {savedMeals.map((meal) => (
+                  <div
+                    key={meal.id}
+                    className="flex-shrink-0 w-44 bg-slate-950/70 border border-slate-800 hover:border-[#C9F24D]/30 rounded-2xl p-3 flex flex-col gap-2 group relative transition"
+                  >
+                    <p className="text-xs font-semibold text-slate-200 leading-tight line-clamp-2">{meal.name}</p>
+
+                    <div className="text-[10px] text-slate-500 flex flex-col gap-0.5">
+                      <span className="text-orange-400 font-bold">{Math.round(meal.macros.calories)} kcal</span>
+                      <span className="text-slate-500">P {meal.macros.protein}g · C {meal.macros.carbs}g · F {meal.macros.fat}g</span>
+                      <span className="text-slate-600">{meal.ingredients.length} ingredient{meal.ingredients.length !== 1 ? "s" : ""}</span>
+                    </div>
+
+                    <div className="flex gap-1.5 mt-auto">
+                      <button
+                        onClick={() => handleLogSavedMeal(meal)}
+                        disabled={savedMealActionId === meal.id}
+                        className="flex-1 flex items-center justify-center gap-1 bg-[#C9F24D] hover:bg-[#D4F56A] disabled:opacity-50 rounded-lg py-1.5 text-[10px] font-bold text-[#0B0C09] transition cursor-pointer"
+                        title="Log this meal now, exactly as saved"
+                      >
+                        {savedMealActionId === meal.id
+                          ? <Loader2 className="w-3 h-3 animate-spin" />
+                          : <Bookmark className="w-3 h-3" />}
+                        Log
+                      </button>
+                      <button
+                        onClick={() => openEditSavedMeal(meal)}
+                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                        title="Change quantities, add/remove ingredients, or rename"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSavedMeal(meal.id)}
+                        className="w-7 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-red-900/40 hover:border-red-800/40 text-slate-500 hover:text-red-400 transition cursor-pointer"
+                        title="Delete this saved meal"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* ── Meal logs ── */}
           <div className="bg-slate-900/40 backdrop-blur-md border border-slate-800/80 rounded-3xl p-6 shadow-2xl flex-1 flex flex-col">
             <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2 mb-4">
@@ -1139,6 +1497,15 @@ export default function Dashboard() {
                               ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" />
                               : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
                           </div>
+                        </button>
+
+                        {/* Save as a reusable meal template */}
+                        <button
+                          onClick={() => openSaveAsMeal(meal.ingredients, meal.ingredients.map((i) => i.name).slice(0, 3).join(" + ") || "My Meal")}
+                          className="self-center w-7 h-7 flex-shrink-0 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-[#C9F24D]/40 flex items-center justify-center text-slate-600 hover:text-[#C9F24D] transition"
+                          title="Save this as a reusable meal"
+                        >
+                          <Bookmark className="w-3.5 h-3.5" />
                         </button>
 
                         {/* Delete button — outside the expand toggle so it doesn't trigger expand */}
@@ -1823,7 +2190,7 @@ export default function Dashboard() {
             <div className="p-5 space-y-3">
               {portionMeal.ingredients.map((ing) => {
                 const name = ing.name || "";
-                const grams = portionGrams[name] ?? ing.grams ?? 100;
+                const grams = portionGrams[name] ?? ing.weight_g ?? 100;
                 return (
                   <div key={name} className="flex items-center gap-3">
                     <span className="flex-1 text-xs text-slate-300 font-medium capitalize">{name}</span>
@@ -1848,13 +2215,11 @@ export default function Dashboard() {
                   let cal = 0, pro = 0, crb = 0, fat = 0;
                   portionMeal.ingredients.forEach((ing) => {
                     const name = ing.name || "";
-                    const newG = portionGrams[name] ?? ing.grams ?? 100;
-                    const oldG = ing.grams ?? 100;
-                    const ratio = oldG > 0 ? newG / oldG : 1;
-                    cal += (ing.calories ?? 0) * ratio;
-                    pro += (ing.protein  ?? 0) * ratio;
-                    crb += (ing.carbs    ?? 0) * ratio;
-                    fat += (ing.fat      ?? 0) * ratio;
+                    const newG = portionGrams[name] ?? ing.weight_g ?? 100;
+                    cal += macroActual(ing.calories_per_100g, newG);
+                    pro += macroActual(ing.protein_per_100g,  newG);
+                    crb += macroActual(ing.carbs_per_100g,    newG);
+                    fat += macroActual(ing.fat_per_100g,      newG);
                   });
                   return (
                     <div className="flex gap-3 text-[10px] font-mono">
@@ -1882,6 +2247,175 @@ export default function Dashboard() {
                   {quickLogging === portionMeal.id
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Logging...</>
                     : <><Zap className="w-4 h-4" /> Log with These Portions</>}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Saved Meal Editor Modal ═══════════════════════════════════════════ */}
+      {savedMealEditor && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-center items-center p-4">
+          {/* max-h caps the panel to the viewport and flex-col + overflow-hidden lets the
+              body scroll internally while the header/footer stay pinned and visible —
+              so the modal never gets clipped off-screen, regardless of ingredient count
+              or viewport size. (Centered-flex + overflow on the outer wrapper would clip
+              both ends with no way to scroll to them — this avoids that trap entirely.) */}
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+              <div>
+                <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                  <Bookmark className="w-4 h-4 text-[#C9F24D]" />
+                  {savedMealEditor.mode === "new" ? "New Saved Meal" : "Edit Saved Meal"}
+                </h3>
+                <p className="text-[10px] text-slate-500 mt-0.5">Adjust quantities, add or remove ingredients, then log or save.</p>
+              </div>
+              <button onClick={closeSavedMealEditor} className="w-8 h-8 flex-shrink-0 rounded-lg bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-400 hover:text-[#F4F5EF] transition">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto flex-1 min-h-0">
+              {/* Name */}
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Meal name</label>
+                <input
+                  type="text"
+                  value={editorMealName}
+                  onChange={(e) => setEditorMealName(e.target.value)}
+                  placeholder="e.g. Omelette + Protein Shake"
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]"
+                />
+              </div>
+
+              {/* Ingredient list */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Ingredients</label>
+                {editorIngredients.length === 0 ? (
+                  <p className="text-[11px] text-slate-600 italic">No ingredients yet — add one below.</p>
+                ) : (
+                  editorIngredients.map((ing, idx) => (
+                    <div key={idx} className="flex items-center gap-2 bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs text-slate-200 font-medium capitalize truncate block">{ing.name}</span>
+                        {ing.brand && <span className="text-[9px] text-[#C9F24D] flex items-center gap-0.5"><Tag className="w-2.5 h-2.5" />{ing.brand}</span>}
+                        <span className="text-[9px] text-slate-500 font-mono">{Math.round(macroActual(ing.calories_per_100g, ing.weight_g))} kcal</span>
+                      </div>
+                      <input
+                        type="number"
+                        min={1}
+                        value={ing.weight_g}
+                        onChange={(e) => updateEditorIngredientWeight(idx, Number(e.target.value))}
+                        className="w-16 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 text-right focus:outline-none focus:border-[#C9F24D]"
+                      />
+                      <span className="text-[10px] text-slate-500 w-3">g</span>
+                      <button
+                        onClick={() => removeEditorIngredient(idx)}
+                        className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded-lg bg-slate-900 hover:bg-red-950/60 text-slate-500 hover:text-red-400 transition"
+                        title="Remove ingredient"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Add ingredient */}
+              <div className="bg-slate-950/40 border border-dashed border-slate-800 rounded-xl p-3 space-y-2">
+                <label className="block text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Add ingredient</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newIngName}
+                    onChange={(e) => setNewIngName(e.target.value)}
+                    placeholder="Name (e.g. egg)"
+                    className="flex-1 min-w-0 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]"
+                  />
+                  <input
+                    type="text"
+                    value={newIngBrand}
+                    onChange={(e) => setNewIngBrand(e.target.value)}
+                    placeholder="Brand (optional)"
+                    className="w-28 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-[#C9F24D]"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min={1}
+                      value={newIngWeight}
+                      onChange={(e) => setNewIngWeight(Number(e.target.value))}
+                      className="w-20 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1.5 text-xs text-slate-100 text-right focus:outline-none focus:border-[#C9F24D]"
+                    />
+                    <span className="text-[10px] text-slate-500">g</span>
+                  </div>
+                  <button
+                    onClick={handleAddEditorIngredient}
+                    disabled={resolvingIngredient || !newIngName.trim()}
+                    className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-xs font-semibold text-slate-200 py-1.5 transition cursor-pointer"
+                  >
+                    {resolvingIngredient
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Resolving...</>
+                      : <><Plus className="w-3.5 h-3.5" /> Add</>}
+                  </button>
+                </div>
+              </div>
+
+              {/* Live macro total */}
+              <div className="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+                <p className="text-[9px] uppercase font-bold text-slate-600 mb-2 tracking-wider">Total macros</p>
+                {(() => {
+                  let cal = 0, pro = 0, crb = 0, fat = 0;
+                  editorIngredients.forEach((ing) => {
+                    cal += macroActual(ing.calories_per_100g, ing.weight_g);
+                    pro += macroActual(ing.protein_per_100g,  ing.weight_g);
+                    crb += macroActual(ing.carbs_per_100g,    ing.weight_g);
+                    fat += macroActual(ing.fat_per_100g,      ing.weight_g);
+                  });
+                  return (
+                    <div className="flex gap-3 text-[10px] font-mono">
+                      <span className="text-orange-400">{Math.round(cal)} kcal</span>
+                      <span className="text-[#C9F24D]">P {Math.round(pro)}g</span>
+                      <span className="text-[#C9F24D]">C {Math.round(crb)}g</span>
+                      <span className="text-rose-400">F {Math.round(fat)}g</span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+            </div>
+
+            {/* Footer — pinned below the scrollable body so the message and action
+                buttons are always visible, however long the ingredient list gets. */}
+            <div className="p-5 pt-3 border-t border-slate-800 space-y-3 flex-shrink-0">
+              {editorMsg && (
+                <div className={`flex items-center gap-2 text-xs rounded-xl px-3 py-2 ${editorMsg.type === "ok" ? "bg-emerald-950/40 text-emerald-400 border border-emerald-900/40" : "bg-red-950/40 text-red-400 border border-red-900/40"}`}>
+                  {editorMsg.type === "ok" ? <Check className="w-3.5 h-3.5 flex-shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />}
+                  {editorMsg.text}
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSaveMealTemplate}
+                  disabled={editorSaving}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 transition"
+                  title="Save changes to this meal template for next time"
+                >
+                  {editorSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  Save Meal
+                </button>
+                <button
+                  onClick={handleSaveAndLog}
+                  disabled={editorSaving}
+                  className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold text-[#0B0C09] bg-[#C9F24D] hover:bg-[#D4F56A] disabled:opacity-50 transition"
+                  title="Log this meal now with these ingredients"
+                >
+                  {editorSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                  Log Now
                 </button>
               </div>
             </div>

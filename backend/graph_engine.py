@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import httpx
 from typing import TypedDict, List, Dict, Any, Optional
 from llm_provider import get_llm, get_resolution_llm
@@ -12,6 +11,11 @@ except ImportError:
     _TAVILY_AVAILABLE = False
 
 from schemas import MealExtractionResponse, IngredientExtraction
+from db_sync import (
+    query_local_cache as _db_query_cache,
+    save_to_local_cache as _db_save_cache,
+    get_preferred_brand as _db_get_preferred_brand,
+)
 
 # Define the state shape
 class GraphState(TypedDict):
@@ -27,114 +31,28 @@ class MacroParsingResponse(BaseModel):
     carbs_per_100g: float = Field(..., description="Carbohydrates in grams per 100g of food")
     fat_per_100g: float = Field(..., description="Fat in grams per 100g of food")
 
-# DB helper for sync lookups inside graph nodes
+# DB helpers for sync lookups inside graph nodes — backed by Supabase/Postgres via db_sync.
 def query_local_cache(name: str, brand: Optional[str]) -> Optional[Dict[str, float]]:
-    """
-    Synchronously query the SQLite database for cached ingredients.
-    """
-    conn = None
-    try:
-        conn = sqlite3.connect("meal_tracker.db")
-        cursor = conn.cursor()
-        
-        name_lower = name.strip().lower()
-        
-        if brand:
-            brand_lower = brand.strip().lower()
-            cursor.execute(
-                "SELECT calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g FROM ingredient_cache WHERE lower(name) = ? AND lower(brand) = ? LIMIT 1",
-                (name_lower, brand_lower)
-            )
-        else:
-            cursor.execute(
-                "SELECT calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g FROM ingredient_cache WHERE lower(name) = ? AND brand IS NULL LIMIT 1",
-                (name_lower,)
-            )
-            
-        row = cursor.fetchone()
-        if row:
-            return {
-                "calories_per_100g": row[0],
-                "protein_per_100g": row[1],
-                "carbs_per_100g": row[2],
-                "fat_per_100g": row[3]
-            }
-            
-        # Fallback to name match only if brand was not specified or if brand match failed
-        cursor.execute(
-            "SELECT calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g FROM ingredient_cache WHERE lower(name) = ? LIMIT 1",
-            (name_lower,)
-        )
-        row = cursor.fetchone()
-        if row:
-            return {
-                "calories_per_100g": row[0],
-                "protein_per_100g": row[1],
-                "carbs_per_100g": row[2],
-                "fat_per_100g": row[3]
-            }
-            
-    except Exception as e:
-        print(f"Error querying local SQLite cache: {e}")
-    finally:
-        if conn:
-            conn.close()
+    name_lower = name.strip().lower()
+    brand_lower = brand.strip().lower() if brand else None
+
+    cached = _db_query_cache(name_lower, brand_lower)
+    if cached:
+        return cached
+
+    # Fallback to name match only if brand was not specified or if brand match failed
+    if brand_lower:
+        return _db_query_cache(name_lower, None)
     return None
 
 def save_to_local_cache(name: str, brand: Optional[str], macros: Dict[str, float]):
-    """
-    Save resolved ingredient to SQLite cache.
-    """
-    conn = None
-    try:
-        conn = sqlite3.connect("meal_tracker.db")
-        cursor = conn.cursor()
-        
-        name_lower = name.strip().lower()
-        brand_val = brand.strip().lower() if brand else None
-        
-        # Check if already exists to prevent duplicate insertion
-        if brand_val:
-            cursor.execute("SELECT id FROM ingredient_cache WHERE lower(name) = ? AND lower(brand) = ?", (name_lower, brand_val))
-        else:
-            cursor.execute("SELECT id FROM ingredient_cache WHERE lower(name) = ? AND brand IS NULL", (name_lower,))
-            
-        if cursor.fetchone():
-            return
-            
-        cursor.execute(
-            "INSERT INTO ingredient_cache (name, brand, calories_per_100g, protein_per_100g, carbs_per_100g, fat_per_100g) VALUES (?, ?, ?, ?, ?, ?)",
-            (name_lower, brand_val, macros["calories_per_100g"], macros["protein_per_100g"], macros["carbs_per_100g"], macros["fat_per_100g"])
-        )
-        conn.commit()
-        print(f"Cached brand new resolved food: {brand_val or ''} {name_lower}")
-    except Exception as e:
-        print(f"Error saving to local SQLite cache: {e}")
-    finally:
-        if conn:
-            conn.close()
+    name_lower = name.strip().lower()
+    brand_val = brand.strip().lower() if brand else None
+    _db_save_cache(name_lower, brand_val, macros)
+    print(f"Cached brand new resolved food: {brand_val or ''} {name_lower}")
 
 def get_preferred_brand(ingredient_name: str) -> Optional[str]:
-    """
-    Synchronously look up the user's preferred brand for an ingredient.
-    Returns the brand string if set, or None.
-    """
-    conn = None
-    try:
-        conn = sqlite3.connect("meal_tracker.db")
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT preferred_brand FROM brand_preferences WHERE ingredient_name = ? LIMIT 1",
-            (ingredient_name.strip().lower(),)
-        )
-        row = cursor.fetchone()
-        return row[0] if row else None
-    except Exception as e:
-        print(f"Error looking up brand preference: {e}")
-        return None
-    finally:
-        if conn:
-            conn.close()
+    return _db_get_preferred_brand(ingredient_name.strip().lower())
 
 # ----------------- GRAPH NODES -----------------
 
@@ -288,7 +206,7 @@ def _resolve_single(
     label = f"'{brand} {name}'" if brand else f"'{name}'"
     print(f"[Resolution Node] Resolving {label} @ {weight}g")
 
-    # ── Step 1: SQLite cache ──────────────────────────────────────────────
+    # ── Step 1: Supabase cache ──────────────────────────────────────────────
     cached_macros = query_local_cache(name, brand or None)
     if cached_macros:
         print(f"[Resolution Node] ✓ CACHE HIT {label}")
@@ -350,7 +268,7 @@ def _resolve_single(
 def resolution_node(state: GraphState) -> Dict[str, Any]:
     """
     Node 2: Resolve each ingredient to per-100g macros in parallel.
-    Priority per ingredient: brand_preferences → SQLite cache → Tavily+LLM → generic fallback.
+    Priority per ingredient: brand_preferences → Supabase cache → Tavily+LLM → generic fallback.
     """
     import concurrent.futures
 
