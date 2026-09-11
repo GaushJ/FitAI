@@ -973,12 +973,10 @@ export default function Dashboard() {
       <header className="sticky top-0 z-40 bg-slate-950/80 backdrop-blur-md border-b border-slate-900 py-4 px-4 sm:px-6 md:px-12">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-[#C9F24D] flex items-center justify-center shadow-lg shadow-[rgba(201,242,77,0.25)] flex-shrink-0">
-              <Utensils className="w-5 h-5 text-[#0B0C09]" />
-            </div>
+            <Dumbbell className="w-7 h-7 text-[#C9F24D] flex-shrink-0" strokeWidth={1.8} />
             <div>
               <h1 className="text-xl font-bold tracking-tight text-[#C9F24D] flex items-center gap-1.5">
-                Macronaut <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
+                GetFitbro <span className="text-[10px] font-semibold tracking-widest text-[#C9F24D] border border-[#C9F24D]/30 bg-[#C9F24D]/5 px-2 py-0.5 rounded-full uppercase">Active AI</span>
               </h1>
               <p className="text-[10px] text-slate-500">AI-Powered Macro Tracking</p>
             </div>

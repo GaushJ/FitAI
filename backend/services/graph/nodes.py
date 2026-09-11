@@ -1,35 +1,24 @@
+"""LangGraph node functions for the meal-resolution pipeline: extraction →
+resolution → calculation. Wired together in services/graph/pipeline.py."""
 import os
-import httpx
-from typing import TypedDict, List, Dict, Any, Optional
-from llm_provider import get_llm, get_resolution_llm
-from pydantic import BaseModel, Field
-from langgraph.graph import StateGraph, END
+from typing import Any, Dict, List, Optional
+
+from schemas.graph import IngredientExtraction, MacroParsingResponse, MealExtractionResponse
+from services.db_sync import (
+    query_local_cache as _db_query_cache,
+    save_to_local_cache as _db_save_cache,
+    get_preferred_brand as _db_get_preferred_brand,
+)
+from services.llm_provider import get_llm, get_resolution_llm
+from services.macros import totals_from_ingredients
+from services.graph.state import GraphState
+
 try:
     from langchain_tavily import TavilySearch
     _TAVILY_AVAILABLE = True
 except ImportError:
     _TAVILY_AVAILABLE = False
 
-from schemas import MealExtractionResponse, IngredientExtraction
-from db_sync import (
-    query_local_cache as _db_query_cache,
-    save_to_local_cache as _db_save_cache,
-    get_preferred_brand as _db_get_preferred_brand,
-)
-
-# Define the state shape
-class GraphState(TypedDict):
-    raw_text: str
-    extracted_ingredients: List[IngredientExtraction]
-    resolved_ingredients: List[Dict[str, Any]]
-    total_meal_macros: Dict[str, float]
-
-# Simple Pydantic schema for LLM sub-call in resolution
-class MacroParsingResponse(BaseModel):
-    calories_per_100g: float = Field(..., description="Calories per 100g of food")
-    protein_per_100g: float = Field(..., description="Protein in grams per 100g of food")
-    carbs_per_100g: float = Field(..., description="Carbohydrates in grams per 100g of food")
-    fat_per_100g: float = Field(..., description="Fat in grams per 100g of food")
 
 # DB helpers for sync lookups inside graph nodes — backed by Supabase/Postgres via db_sync.
 def query_local_cache(name: str, brand: Optional[str]) -> Optional[Dict[str, float]]:
@@ -45,14 +34,17 @@ def query_local_cache(name: str, brand: Optional[str]) -> Optional[Dict[str, flo
         return _db_query_cache(name_lower, None)
     return None
 
+
 def save_to_local_cache(name: str, brand: Optional[str], macros: Dict[str, float]):
     name_lower = name.strip().lower()
     brand_val = brand.strip().lower() if brand else None
     _db_save_cache(name_lower, brand_val, macros)
     print(f"Cached brand new resolved food: {brand_val or ''} {name_lower}")
 
+
 def get_preferred_brand(ingredient_name: str) -> Optional[str]:
     return _db_get_preferred_brand(ingredient_name.strip().lower())
+
 
 # ----------------- GRAPH NODES -----------------
 
@@ -140,7 +132,7 @@ def _regex_extract_ingredients(raw_text: str) -> List[IngredientExtraction]:
         # Strip trailing noise like "sized" that may linger in the name
         name = re.sub(r"\s*sized?\s*$", "", name, flags=re.IGNORECASE).strip()
 
-        results.append(IngredientExtraction(ingredient_name=name, weight_g=weight_g))
+        results.append(IngredientExtraction(name=name, weight_g=weight_g))
 
     return results
 
@@ -176,6 +168,7 @@ def extraction_node(state: GraphState) -> Dict[str, Any]:
         print(f"[Extraction Node] Regex fallback extracted: {fallback}")
         return {"extracted_ingredients": fallback}
 
+
 def _is_credit_error(exc: Exception) -> bool:
     return "credit balance" in str(exc).lower() or "402" in str(exc) or "payment" in str(exc).lower()
 
@@ -189,7 +182,7 @@ def _resolve_single(
 ) -> Dict[str, Any]:
     """Resolve one ingredient — runs in a thread pool for parallelism."""
     # Re-set the API key inside this thread (contextvars don't cross thread boundaries reliably)
-    from llm_provider import set_request_key
+    from services.llm_provider import set_request_key
     set_request_key(api_key)
     name = item.name
     brand = item.brand or ""
@@ -292,7 +285,7 @@ def resolution_node(state: GraphState) -> Dict[str, Any]:
 
     # Read the API key from the contextvar now (main thread) and pass it explicitly
     # to each worker — threads have their own contextvar scope.
-    from llm_provider import _api_key_ctx
+    from services.llm_provider import _api_key_ctx
     api_key = _api_key_ctx.get()
 
     # Resolve all ingredients concurrently (I/O-bound: network calls to Tavily + LLM)
@@ -318,44 +311,10 @@ def resolution_node(state: GraphState) -> Dict[str, Any]:
     )
     return {"resolved_ingredients": resolved_list}
 
+
 def calculation_node(state: GraphState) -> Dict[str, Any]:
-    """
-    Node 3: Multiply per-100g values against weight_g and sum up.
-    """
+    """Node 3: Multiply per-100g values against weight_g and sum up."""
     resolved_ingredients = state.get("resolved_ingredients", [])
-    
-    total_calories = 0.0
-    total_protein = 0.0
-    total_carbs = 0.0
-    total_fat = 0.0
-    
-    for item in resolved_ingredients:
-        weight_factor = item["weight_g"] / 100.0
-        total_calories += item["calories_per_100g"] * weight_factor
-        total_protein += item["protein_per_100g"] * weight_factor
-        total_carbs += item["carbs_per_100g"] * weight_factor
-        total_fat += item["fat_per_100g"] * weight_factor
-        
-    totals = {
-        "calories": round(total_calories, 1),
-        "protein": round(total_protein, 1),
-        "carbs": round(total_carbs, 1),
-        "fat": round(total_fat, 1)
-    }
-    
+    totals = totals_from_ingredients(resolved_ingredients)
     print(f"[Calculation Node] Aggregated totals: {totals}")
     return {"total_meal_macros": totals}
-
-# ----------------- GRAPH COMPILATION -----------------
-
-workflow = StateGraph(GraphState)
-workflow.add_node("extractor", extraction_node)
-workflow.add_node("resolver", resolution_node)
-workflow.add_node("calculator", calculation_node)
-
-workflow.set_entry_point("extractor")
-workflow.add_edge("extractor", "resolver")
-workflow.add_edge("resolver", "calculator")
-workflow.add_edge("calculator", END)
-
-compiled_graph = workflow.compile()

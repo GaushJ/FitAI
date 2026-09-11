@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, AlertCircle, Eye, EyeOff, User, Lock, ArrowRight, UserPlus, LogIn, Utensils } from "lucide-react";
+import { Loader2, AlertCircle, Eye, EyeOff, User, Lock, ArrowRight, UserPlus, LogIn, Dumbbell } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -101,10 +101,8 @@ export default function LoginPage() {
       {/* Logo */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 32, position: "relative" }}>
         <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none" }}>
-          <div style={{ width: 36, height: 36, borderRadius: 11, background: "#C9F24D", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Utensils size={18} color="#0B0C09" />
-          </div>
-          <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em", color: "#F4F5EF" }}>Macronaut</span>
+          <Dumbbell size={26} color="#C9F24D" strokeWidth={1.8} />
+          <span style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 22, letterSpacing: "-0.02em", color: "#F4F5EF" }}>GetFitbro</span>
         </a>
         <p style={{ fontSize: 13, color: "#8E9085" }}>AI-powered macro tracking</p>
       </div>

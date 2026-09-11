@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Macronaut | AI Meal & Macro Tracker",
+  title: "GetFitbro | AI Meal & Macro Tracker",
   description: "Track your daily macros, streaks, and calories with agentic AI that resolves brands, portions, and prep — type it or say it.",
 };
 

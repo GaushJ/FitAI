@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Utensils, Mic, Sparkles } from "lucide-react";
+import { Dumbbell, Mic, Sparkles } from "lucide-react";
 
 const ACCENT = "#C9F24D";
 const BG = "#0B0C09";
@@ -133,10 +133,8 @@ export default function LandingPage() {
       <nav style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, backdropFilter: "blur(16px)", background: "rgba(11,12,9,0.72)", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
         <div className="fv-nav-inner" style={{ maxWidth: 1240, margin: "0 auto", padding: "0 32px", height: 68, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 30, height: 30, borderRadius: 9, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-              <Utensils size={16} color={BG} />
-            </div>
-            <span className="fv-nav-brand-text" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>Macronaut</span>
+            <Dumbbell size={22} color={ACCENT} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+            <span className="fv-nav-brand-text" style={{ fontFamily: "'Bricolage Grotesque', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: "-0.02em" }}>GetFitbro</span>
           </div>
           <div className="fv-nav-actions" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <button onClick={() => router.push("/login")} style={{ background: "none", border: "none", color: "#C8CABF", fontSize: 14, fontWeight: 600, cursor: "pointer", padding: "8px 12px" }}>Sign in</button>
@@ -368,7 +366,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 600, fontSize: "clamp(18px,2.2vw,28px)", lineHeight: 1.32, letterSpacing: "-0.02em", color: "#F4F5EF", marginBottom: 30 }}>
-            &ldquo;I&apos;ve tried every macro tracker. Macronaut is the first one I actually use every day — because logging <span style={{ color: ACCENT }}>takes five seconds</span>.&rdquo;
+            &ldquo;I&apos;ve tried every macro tracker. GetFitbro is the first one I actually use every day — because logging <span style={{ color: ACCENT }}>takes five seconds</span>.&rdquo;
           </p>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }}>
             <div style={{ width: 42, height: 42, borderRadius: "50%", background: ACCENT, color: BG, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>A</div>
@@ -402,12 +400,10 @@ export default function LandingPage() {
       <footer style={{ borderTop: "1px solid rgba(255,255,255,0.07)", padding: "34px 32px" }}>
         <div style={{ maxWidth: 1240, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ width: 26, height: 26, borderRadius: 8, background: ACCENT, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Utensils size={14} color={BG} />
-            </div>
-            <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 15 }}>Macronaut</span>
+            <Dumbbell size={18} color={ACCENT} strokeWidth={2} />
+            <span style={{ fontFamily: "'Bricolage Grotesque',sans-serif", fontWeight: 700, fontSize: 15 }}>GetFitbro</span>
           </div>
-          <p style={{ fontSize: 13, color: "#5E6056" }}>© 2026 Macronaut · Log it. Track it. Keep the streak.</p>
+          <p style={{ fontSize: 13, color: "#5E6056" }}>© 2026 GetFitbro · Log it. Track it. Keep the streak.</p>
         </div>
       </footer>
     </div>
