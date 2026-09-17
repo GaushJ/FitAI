@@ -7,5 +7,5 @@ export default function RootIndex() {
 
   if (isBootstrapping) return <LoadingSpinner />;
 
-  return <Redirect href={user ? "/(app)" : "/(auth)/login"} />;
+  return <Redirect href={user ? "/(tabs)/dashboard" : "/(auth)/login"} />;
 }

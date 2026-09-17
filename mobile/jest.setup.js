@@ -13,3 +13,14 @@ jest.mock("expo-secure-store", () => {
     }),
   };
 });
+
+jest.mock("expo-audio", () => ({
+  RecordingPresets: { HIGH_QUALITY: {} },
+  requestRecordingPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+  useAudioRecorder: jest.fn(() => ({
+    prepareToRecordAsync: jest.fn(() => Promise.resolve()),
+    record: jest.fn(),
+    stop: jest.fn(() => Promise.resolve()),
+    uri: "file:///mock-recording.m4a",
+  })),
+}));

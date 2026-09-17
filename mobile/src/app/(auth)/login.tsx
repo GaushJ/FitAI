@@ -9,7 +9,7 @@ export default function LoginScreen() {
   const [tab, setTab] = useState<AuthTab>("login");
 
   const handleAuthSuccess = () => {
-    router.replace("/(app)");
+    router.replace("/(tabs)/dashboard");
   };
 
   return (
