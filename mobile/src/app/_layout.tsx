@@ -1,4 +1,5 @@
 import "../global.css";
+import "@/lib/webPolyfills";
 
 import { useEffect } from "react";
 import { Stack } from "expo-router";

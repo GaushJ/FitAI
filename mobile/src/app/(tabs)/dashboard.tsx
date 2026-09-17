@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, Text, View, Pressable } from "react-native";
+import { ScrollView, Text, View, Pressable, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Dumbbell, Flame, Settings } from "lucide-react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
@@ -22,26 +22,38 @@ import type {
   TrackMealResponse,
 } from "@/features/dashboard/types";
 import { SettingsSheet } from "@/features/settings/components";
+import { deleteSavedMeal, getSavedMeals, logSavedMeal } from "@/features/savedMeals/api";
+import { SavedMealsRow, SavedMealEditorSheet, type SavedMealEditorTarget } from "@/features/savedMeals/components";
+import type { LogSavedMealResponse, SavedMeal } from "@/features/savedMeals/types";
 
 export default function DashboardScreen() {
   const settingsSheetRef = useRef<BottomSheetModal>(null);
   const ingredientSheetRef = useRef<BottomSheetModal>(null);
   const portionSheetRef = useRef<BottomSheetModal>(null);
+  const savedMealSheetRef = useRef<BottomSheetModal>(null);
 
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
+  const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loggingId, setLoggingId] = useState<number | null>(null);
+  const [savedLoggingId, setSavedLoggingId] = useState<number | null>(null);
   const [editingIngredient, setEditingIngredient] = useState<IngredientEditTarget | null>(null);
   const [portionMeal, setPortionMeal] = useState<FrequentMeal | null>(null);
+  const [savedMealTarget, setSavedMealTarget] = useState<SavedMealEditorTarget | null>(null);
 
   const loadDashboard = useCallback(async () => {
     try {
-      const [dashboardRes, frequentRes] = await Promise.all([getDashboard(), getFrequentMeals()]);
+      const [dashboardRes, frequentRes, savedRes] = await Promise.all([
+        getDashboard(),
+        getFrequentMeals(),
+        getSavedMeals(),
+      ]);
       setDashboard(dashboardRes);
       setFrequentMeals(frequentRes);
+      setSavedMeals(savedRes);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to connect to the backend.");
@@ -92,6 +104,57 @@ export default function DashboardScreen() {
   const handleIngredientSaved = async () => {
     setSuccessMessage("Ingredient updated.");
     await loadDashboard();
+  };
+
+  const handleCreateSavedMeal = () => {
+    setSavedMealTarget({ mode: "new", meal: null });
+    savedMealSheetRef.current?.present();
+  };
+
+  const handleEditSavedMeal = (meal: SavedMeal) => {
+    setSavedMealTarget({ mode: "edit", meal });
+    savedMealSheetRef.current?.present();
+  };
+
+  const handleSavedMealSaved = async () => {
+    await loadDashboard();
+  };
+
+  const handleSavedMealLogged = async (result: LogSavedMealResponse) => {
+    setSuccessMessage(`Logged "${result.name}" — ${Math.round(result.macros.calories)} kcal`);
+    await loadDashboard();
+  };
+
+  const handleLogSavedMeal = async (meal: SavedMeal) => {
+    setSavedLoggingId(meal.id);
+    setError("");
+    try {
+      const result = await logSavedMeal(meal.id);
+      setSuccessMessage(`Logged "${result.name}" — ${Math.round(result.macros.calories)} kcal`);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to log meal.");
+    } finally {
+      setSavedLoggingId(null);
+    }
+  };
+
+  const handleDeleteSavedMeal = (meal: SavedMeal) => {
+    Alert.alert("Delete saved meal?", `"${meal.name}" will be removed permanently.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteSavedMeal(meal.id);
+            setSavedMeals((prev) => prev.filter((m) => m.id !== meal.id));
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to delete meal.");
+          }
+        },
+      },
+    ]);
   };
 
   return (
@@ -146,6 +209,15 @@ export default function DashboardScreen() {
             loggingId={loggingId}
           />
 
+          <SavedMealsRow
+            meals={savedMeals}
+            onLog={handleLogSavedMeal}
+            onEdit={handleEditSavedMeal}
+            onDelete={handleDeleteSavedMeal}
+            onCreateNew={handleCreateSavedMeal}
+            loggingId={savedLoggingId}
+          />
+
           {dashboard ? <TodayLogList meals={dashboard.meals} onEditIngredient={handleEditIngredient} /> : null}
         </ScrollView>
       )}
@@ -169,6 +241,12 @@ export default function DashboardScreen() {
 
       <IngredientEditorSheet ref={ingredientSheetRef} target={editingIngredient} onSaved={handleIngredientSaved} />
       <PortionEditorSheet ref={portionSheetRef} meal={portionMeal} onLogged={handlePortionLogged} />
+      <SavedMealEditorSheet
+        ref={savedMealSheetRef}
+        target={savedMealTarget}
+        onSaved={handleSavedMealSaved}
+        onLogged={handleSavedMealLogged}
+      />
     </SafeAreaView>
   );
 }

@@ -4,7 +4,7 @@
 // need to exercise the form logic inside a sheet, not its native slide/
 // gesture animation, so this stands in with a minimal present()/dismiss().
 const React = require("react");
-const { View, TextInput } = require("react-native");
+const { View, TextInput, ScrollView } = require("react-native");
 
 const BottomSheetModal = React.forwardRef(function BottomSheetModal({ children }, ref) {
   const [visible, setVisible] = React.useState(false);
@@ -26,6 +26,7 @@ module.exports = {
   BottomSheetModal,
   BottomSheetModalProvider: ({ children }) => children,
   BottomSheetView: View,
+  BottomSheetScrollView: ScrollView,
   BottomSheetTextInput: TextInput,
   BottomSheetBackdrop: () => null,
 };
