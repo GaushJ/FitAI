@@ -32,6 +32,7 @@ class User(Base):
     food_logs: Mapped[List["DailyFoodLog"]] = relationship("DailyFoodLog", back_populates="user", cascade="all, delete-orphan")
     frequent_meals: Mapped[List["FrequentMeal"]] = relationship("FrequentMeal", back_populates="user", cascade="all, delete-orphan")
     saved_meals: Mapped[List["SavedMeal"]] = relationship("SavedMeal", back_populates="user", cascade="all, delete-orphan")
+    brand_preferences: Mapped[List["BrandPreference"]] = relationship("BrandPreference", back_populates="user", cascade="all, delete-orphan")
 
 
 class IngredientCache(Base):
@@ -48,11 +49,17 @@ class IngredientCache(Base):
 
 
 class BrandPreference(Base):
+    """Per-user "when I say X, I mean this brand" preference — distinct from
+    IngredientCache (shared/global macro data), which every user's preferences
+    resolve against. Uniqueness is scoped per user, not global (migrations/0002)."""
     __tablename__ = "brand_preferences"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    ingredient_name: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    ingredient_name: Mapped[str] = mapped_column(String, index=True, nullable=False)
     preferred_brand: Mapped[str] = mapped_column(String, nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="brand_preferences")
 
 
 class FrequentMeal(Base):

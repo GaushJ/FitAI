@@ -1,6 +1,7 @@
 """Database engine/session setup + startup initialization. Models live in
 db/models.py; query helpers live in db/crud/."""
 import os
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
@@ -24,6 +25,11 @@ if not _raw_url:
 DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1) \
                         .replace("postgresql://", "postgresql+asyncpg://", 1)
 # Supabase requires SSL — pass it via connect_args so asyncpg enforces it.
+# A localhost target (e.g. the Docker Postgres used by the pytest suite) has
+# no SSL configured, so skip it there — every real deployment target is a
+# non-localhost host and keeps requiring SSL exactly as before.
+_is_local_db = urlparse(DATABASE_URL).hostname in ("localhost", "127.0.0.1")
+
 # pool_pre_ping keeps the connection alive across Render's sleep/wake cycles.
 engine = create_async_engine(
     DATABASE_URL,
@@ -31,7 +37,7 @@ engine = create_async_engine(
     pool_size=5,
     max_overflow=10,
     pool_pre_ping=True,
-    connect_args={"ssl": "require"},
+    connect_args={} if _is_local_db else {"ssl": "require"},
 )
 
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
