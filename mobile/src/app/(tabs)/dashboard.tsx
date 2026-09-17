@@ -5,18 +5,37 @@ import { Dumbbell, Flame, Settings } from "lucide-react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Banner, LoadingSpinner } from "@/components/ui";
 import { getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
-import { MacroProgress, MealComposer, FrequentMealsRow, TodayLogList } from "@/features/dashboard/components";
-import type { DashboardResponse, FrequentMeal, TrackMealResponse } from "@/features/dashboard/types";
+import {
+  MacroProgress,
+  MealComposer,
+  FrequentMealsRow,
+  TodayLogList,
+  IngredientEditorSheet,
+  PortionEditorSheet,
+  type IngredientEditTarget,
+} from "@/features/dashboard/components";
+import type {
+  DashboardResponse,
+  FrequentMeal,
+  Ingredient,
+  QuickLogResponse,
+  TrackMealResponse,
+} from "@/features/dashboard/types";
 import { SettingsSheet } from "@/features/settings/components";
 
 export default function DashboardScreen() {
   const settingsSheetRef = useRef<BottomSheetModal>(null);
+  const ingredientSheetRef = useRef<BottomSheetModal>(null);
+  const portionSheetRef = useRef<BottomSheetModal>(null);
+
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loggingId, setLoggingId] = useState<number | null>(null);
+  const [editingIngredient, setEditingIngredient] = useState<IngredientEditTarget | null>(null);
+  const [portionMeal, setPortionMeal] = useState<FrequentMeal | null>(null);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -53,6 +72,26 @@ export default function DashboardScreen() {
     } finally {
       setLoggingId(null);
     }
+  };
+
+  const handleAdjustPortions = (meal: FrequentMeal) => {
+    setPortionMeal(meal);
+    portionSheetRef.current?.present();
+  };
+
+  const handlePortionLogged = async (result: QuickLogResponse) => {
+    setSuccessMessage(`Logged "${result.display_name}" — ${Math.round(result.macros.calories)} kcal`);
+    await loadDashboard();
+  };
+
+  const handleEditIngredient = (mealId: number, index: number, ingredient: Ingredient) => {
+    setEditingIngredient({ mealId, index, ingredient });
+    ingredientSheetRef.current?.present();
+  };
+
+  const handleIngredientSaved = async () => {
+    setSuccessMessage("Ingredient updated.");
+    await loadDashboard();
   };
 
   return (
@@ -100,9 +139,14 @@ export default function DashboardScreen() {
             />
           ) : null}
 
-          <FrequentMealsRow meals={frequentMeals} onLog={handleQuickLog} loggingId={loggingId} />
+          <FrequentMealsRow
+            meals={frequentMeals}
+            onLog={handleQuickLog}
+            onAdjustPortions={handleAdjustPortions}
+            loggingId={loggingId}
+          />
 
-          {dashboard ? <TodayLogList meals={dashboard.meals} /> : null}
+          {dashboard ? <TodayLogList meals={dashboard.meals} onEditIngredient={handleEditIngredient} /> : null}
         </ScrollView>
       )}
 
@@ -122,6 +166,9 @@ export default function DashboardScreen() {
           }}
         />
       ) : null}
+
+      <IngredientEditorSheet ref={ingredientSheetRef} target={editingIngredient} onSaved={handleIngredientSaved} />
+      <PortionEditorSheet ref={portionSheetRef} meal={portionMeal} onLogged={handlePortionLogged} />
     </SafeAreaView>
   );
 }

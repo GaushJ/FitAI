@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api/client";
-import type { DashboardResponse, FrequentMeal, QuickLogResponse, TrackMealResponse } from "./types";
+import type { DashboardResponse, FrequentMeal, MealLog, QuickLogResponse, TrackMealResponse } from "./types";
 
 export function getDashboard(): Promise<DashboardResponse> {
   return apiRequest<DashboardResponse>("/api/dashboard");
@@ -29,4 +29,20 @@ export function logFrequentMeal(id: number, portions?: Record<string, number>): 
     method: "POST",
     json: { portions: portions ?? {} },
   });
+}
+
+export interface IngredientMacroPayload {
+  weight_g: number;
+  calories_per_100g: number;
+  protein_per_100g: number;
+  carbs_per_100g: number;
+  fat_per_100g: number;
+}
+
+export function updateMealIngredient(
+  mealId: number,
+  ingredientIndex: number,
+  payload: IngredientMacroPayload
+): Promise<Pick<MealLog, "id" | "ingredients" | "macros">> {
+  return apiRequest(`/api/meals/${mealId}/ingredients/${ingredientIndex}`, { method: "PATCH", json: payload });
 }
