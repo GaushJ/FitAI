@@ -64,3 +64,27 @@ export interface QuickLogResponse {
   macros: Macros;
   display_name: string;
 }
+
+export interface ScannedLabel {
+  filename: string;
+  name: string;
+  brand: string;
+  unit: "g" | "ml";
+  macros: {
+    calories_per_100g: number;
+    protein_per_100g: number;
+    carbs_per_100g: number;
+    fat_per_100g: number;
+  };
+}
+
+export interface FailedLabelScan {
+  filename: string;
+  error: string;
+}
+
+export interface ScanLabelsResponse {
+  status: string;
+  saved: ScannedLabel[];
+  failed: FailedLabelScan[];
+}

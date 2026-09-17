@@ -27,3 +27,10 @@ jest.mock("expo-audio", () => ({
     uri: "file:///mock-recording.m4a",
   })),
 }));
+
+jest.mock("expo-image-picker", () => ({
+  requestCameraPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+  requestMediaLibraryPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),
+  launchCameraAsync: jest.fn(() => Promise.resolve({ canceled: true, assets: null })),
+  launchImageLibraryAsync: jest.fn(() => Promise.resolve({ canceled: true, assets: null })),
+}));
