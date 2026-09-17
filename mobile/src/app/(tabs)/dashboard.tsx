@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ScrollView, Text, View, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Dumbbell, Flame } from "lucide-react-native";
+import { Dumbbell, Flame, Settings } from "lucide-react-native";
+import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Banner, LoadingSpinner } from "@/components/ui";
 import { getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
 import { MacroProgress, MealComposer, FrequentMealsRow, TodayLogList } from "@/features/dashboard/components";
 import type { DashboardResponse, FrequentMeal, TrackMealResponse } from "@/features/dashboard/types";
+import { SettingsSheet } from "@/features/settings/components";
 
 export default function DashboardScreen() {
+  const settingsSheetRef = useRef<BottomSheetModal>(null);
   const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
   const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,9 +62,20 @@ export default function DashboardScreen() {
           <Dumbbell size={18} color="#C9F24D" strokeWidth={1.8} />
           <Text className="font-display text-[15px] text-text-primary">GetFitbro</Text>
         </View>
-        <View className="flex-row items-center gap-1 rounded-full border border-macro-calories/20 bg-macro-calories/10 px-2.5 py-1">
-          <Flame size={11} color="#fb923c" fill="#fb923c" />
-          <Text className="font-mono text-xs font-bold text-macro-calories">{dashboard?.user.current_streak ?? 0}</Text>
+        <View className="flex-row items-center gap-3">
+          <View className="flex-row items-center gap-1 rounded-full border border-macro-calories/20 bg-macro-calories/10 px-2.5 py-1">
+            <Flame size={11} color="#fb923c" fill="#fb923c" />
+            <Text className="font-mono text-xs font-bold text-macro-calories">{dashboard?.user.current_streak ?? 0}</Text>
+          </View>
+          {dashboard ? (
+            <Pressable
+              onPress={() => settingsSheetRef.current?.present()}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+            >
+              <Settings size={18} color="#8E9085" />
+            </Pressable>
+          ) : null}
         </View>
       </View>
 
@@ -91,6 +105,23 @@ export default function DashboardScreen() {
           {dashboard ? <TodayLogList meals={dashboard.meals} /> : null}
         </ScrollView>
       )}
+
+      {dashboard ? (
+        <SettingsSheet
+          ref={settingsSheetRef}
+          initialValues={{
+            name: dashboard.user.name,
+            target_calories: dashboard.user.target_calories,
+            target_protein: dashboard.user.target_protein,
+            target_carbs: dashboard.user.target_carbs,
+            target_fat: dashboard.user.target_fat,
+          }}
+          onSaved={(updated) => {
+            setDashboard((prev) => (prev ? { ...prev, user: { ...prev.user, ...updated } } : prev));
+            setSuccessMessage("Targets updated!");
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }

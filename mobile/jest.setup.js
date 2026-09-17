@@ -14,6 +14,9 @@ jest.mock("expo-secure-store", () => {
   };
 });
 
+// See __mocks__/@gorhom/bottom-sheet.js for why this needs a manual mock.
+jest.mock("@gorhom/bottom-sheet");
+
 jest.mock("expo-audio", () => ({
   RecordingPresets: { HIGH_QUALITY: {} },
   requestRecordingPermissionsAsync: jest.fn(() => Promise.resolve({ granted: true })),

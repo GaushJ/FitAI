@@ -22,7 +22,11 @@ SUPPORTED_PROVIDERS = {
 }
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
+# EXTRA_CORS_ORIGINS (comma-separated) lets local/dev verification add its own
+# origin — e.g. the mobile app's Expo web preview — without hardcoding a dev
+# port into the deployed allowlist. Unset in production, so it's a no-op there.
 CORS_ALLOW_ORIGINS = [
     "http://localhost:3000",
     "https://fit-ai-black-one.vercel.app",
+    *[origin.strip() for origin in os.environ.get("EXTRA_CORS_ORIGINS", "").split(",") if origin.strip()],
 ]
