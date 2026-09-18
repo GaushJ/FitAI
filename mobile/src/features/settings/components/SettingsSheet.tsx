@@ -1,8 +1,9 @@
 import { forwardRef, useEffect, useState } from "react";
 import { View, Text, Pressable } from "react-native";
 import { BottomSheetModal, BottomSheetView, BottomSheetBackdrop } from "@gorhom/bottom-sheet";
-import { X } from "lucide-react-native";
+import { LogOut, X } from "lucide-react-native";
 import { Banner } from "@/components/ui";
+import { useAuth } from "@/features/auth/AuthContext";
 import { updateUser } from "../api";
 import type { UserTargets } from "../types";
 import { TargetField } from "./TargetField";
@@ -17,6 +18,7 @@ export const SettingsSheet = forwardRef<BottomSheetModal, SettingsSheetProps>(fu
   { initialValues, onSaved },
   ref
 ) {
+  const { logout } = useAuth();
   const [name, setName] = useState(initialValues.name);
   const [calories, setCalories] = useState(String(initialValues.target_calories));
   const [protein, setProtein] = useState(String(initialValues.target_protein));
@@ -37,6 +39,11 @@ export const SettingsSheet = forwardRef<BottomSheetModal, SettingsSheetProps>(fu
 
   const dismiss = () => {
     if (ref && "current" in ref) ref.current?.dismiss();
+  };
+
+  const handleLogout = () => {
+    dismiss();
+    logout();
   };
 
   const handleSave = async () => {
@@ -137,6 +144,11 @@ export const SettingsSheet = forwardRef<BottomSheetModal, SettingsSheetProps>(fu
             <Text className="font-sans-bold text-[13px] text-bg">{saving ? "Saving…" : "Save"}</Text>
           </Pressable>
         </View>
+
+        <Pressable onPress={handleLogout} className="flex-row items-center justify-center gap-1.5 py-1">
+          <LogOut size={13} color="#f87171" />
+          <Text className="font-sans-semibold text-xs text-danger">Log Out</Text>
+        </Pressable>
       </BottomSheetView>
     </BottomSheetModal>
   );

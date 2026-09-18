@@ -1,6 +1,7 @@
 import { createRef } from "react";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
+import { AuthProvider } from "@/features/auth/AuthContext";
 import { SettingsSheet } from "../SettingsSheet";
 import * as api from "../../api";
 
@@ -16,7 +17,11 @@ const initialValues = {
 
 async function renderSheet(onSaved = jest.fn()) {
   const ref = createRef<BottomSheetModal>();
-  await render(<SettingsSheet ref={ref} initialValues={initialValues} onSaved={onSaved} />);
+  await render(
+    <AuthProvider>
+      <SettingsSheet ref={ref} initialValues={initialValues} onSaved={onSaved} />
+    </AuthProvider>
+  );
   return { ref, onSaved };
 }
 
@@ -81,5 +86,20 @@ describe("SettingsSheet", () => {
     });
 
     expect(screen.getByText("Name is required.")).toBeTruthy();
+  });
+
+  it("logs out and dismisses the sheet when Log Out is pressed", async () => {
+    const { ref } = await renderSheet();
+    await act(async () => {
+      ref.current?.present();
+    });
+
+    expect(screen.getByText("Log Out")).toBeTruthy();
+
+    await act(async () => {
+      await fireEvent.press(screen.getByText("Log Out"));
+    });
+
+    expect(screen.queryByDisplayValue("Test User")).toBeNull();
   });
 });
