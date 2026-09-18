@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ScrollView, Text, View, Pressable, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Bookmark, Dumbbell, Flame, Settings } from "lucide-react-native";
+import { Bookmark, Dumbbell, Flame, KeyRound, Settings } from "lucide-react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Banner, LoadingSpinner } from "@/components/ui";
 import { deleteMeal, getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
@@ -24,6 +24,7 @@ import type {
 } from "@/features/dashboard/types";
 import { SettingsSheet } from "@/features/settings/components";
 import { BrandPreferencesSheet } from "@/features/brandPreferences/components";
+import { ApiKeysSheet } from "@/features/apiKeys/components";
 import { deleteSavedMeal, getSavedMeals, logSavedMeal } from "@/features/savedMeals/api";
 import { SavedMealsRow, SavedMealEditorSheet, type SavedMealEditorTarget } from "@/features/savedMeals/components";
 import type { LogSavedMealResponse, SavedMeal } from "@/features/savedMeals/types";
@@ -31,6 +32,7 @@ import type { LogSavedMealResponse, SavedMeal } from "@/features/savedMeals/type
 export default function DashboardScreen() {
   const settingsSheetRef = useRef<BottomSheetModal>(null);
   const brandPreferencesSheetRef = useRef<BottomSheetModal>(null);
+  const apiKeysSheetRef = useRef<BottomSheetModal>(null);
   const ingredientSheetRef = useRef<BottomSheetModal>(null);
   const portionSheetRef = useRef<BottomSheetModal>(null);
   const savedMealSheetRef = useRef<BottomSheetModal>(null);
@@ -192,6 +194,15 @@ export default function DashboardScreen() {
           </View>
           {dashboard ? (
             <Pressable
+              onPress={() => apiKeysSheetRef.current?.present()}
+              accessibilityRole="button"
+              accessibilityLabel="API Keys"
+            >
+              <KeyRound size={18} color="#8E9085" />
+            </Pressable>
+          ) : null}
+          {dashboard ? (
+            <Pressable
               onPress={() => brandPreferencesSheetRef.current?.present()}
               accessibilityRole="button"
               accessibilityLabel="Brand Preferences"
@@ -271,6 +282,7 @@ export default function DashboardScreen() {
         />
       ) : null}
 
+      <ApiKeysSheet ref={apiKeysSheetRef} />
       <BrandPreferencesSheet ref={brandPreferencesSheetRef} />
       <IngredientEditorSheet ref={ingredientSheetRef} target={editingIngredient} onSaved={handleIngredientSaved} />
       <PortionEditorSheet ref={portionSheetRef} meal={portionMeal} onLogged={handlePortionLogged} />

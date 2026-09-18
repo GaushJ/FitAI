@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { getApiKeyHeaders } from "./apiKeyStorage";
 import { clearAuth, getToken } from "./authStorage";
 
 export class ApiError extends Error {
@@ -42,7 +43,10 @@ export interface RequestOptions {
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", json, form, headers = {}, skipAuth = false } = options;
 
-  const finalHeaders: Record<string, string> = { ...headers };
+  // The user's own LLM keys ride along on every authenticated request, like the
+  // web app — the backend only reads them on the endpoints that call an LLM.
+  // Explicit `headers` from the caller still win.
+  const finalHeaders: Record<string, string> = { ...(skipAuth ? {} : await getApiKeyHeaders()), ...headers };
   let body: BodyInit | undefined;
 
   if (json !== undefined) {

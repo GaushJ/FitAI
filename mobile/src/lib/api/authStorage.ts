@@ -1,26 +1,10 @@
-import * as SecureStore from "expo-secure-store";
-import { Platform } from "react-native";
+import { secureStorage as storage } from "./secureStorage";
 
 /**
  * JWT + user persistence — the mobile replacement for the web app's
  * localStorage (`fitvoice_auth_token`/`fitvoice_auth_user`). Never use
  * AsyncStorage for these: both are secrets/PII-adjacent.
- *
- * expo-secure-store has no web implementation (it throws), so on web this
- * falls back to localStorage. iOS/Android — the app's actual targets —
- * always use SecureStore.
  */
-const webStorage = {
-  getItemAsync: async (key: string) => (typeof localStorage === "undefined" ? null : localStorage.getItem(key)),
-  setItemAsync: async (key: string, value: string) => {
-    if (typeof localStorage !== "undefined") localStorage.setItem(key, value);
-  },
-  deleteItemAsync: async (key: string) => {
-    if (typeof localStorage !== "undefined") localStorage.removeItem(key);
-  },
-};
-
-const storage = Platform.OS === "web" ? webStorage : SecureStore;
 
 const TOKEN_KEY = "getfitbro_auth_token";
 const USER_KEY = "getfitbro_auth_user";
