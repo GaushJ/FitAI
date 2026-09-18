@@ -1,0 +1,14 @@
+# Wrong-password error banner on the login screen.
+---
+- launchApp:
+    clearState: true
+- tapOn: "your_username"
+- inputText: "maestro_fixed"
+- tapOn: "••••••••"
+- inputText: "definitely-wrong-password"
+
+- tapOn:
+    text: "Sign In"
+    index: 1
+
+- assertVisible: "Invalid username or password."

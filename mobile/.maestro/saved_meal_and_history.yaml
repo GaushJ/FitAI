@@ -1,0 +1,21 @@
+# Saved Meals CRUD + M4's Progress history: create a saved meal template,
+# log it, then confirm it shows up in the Progress tab's Meal History.
+# Needs a real Anthropic key configured on the backend (ingredient
+# resolution goes through the same LLM-backed /api/resolve-ingredient used
+# elsewhere in the app).
+---
+- runFlow: login.yaml
+
+- tapOn: "New saved meal"
+- tapOn: "e.g. Breakfast Omelette"
+- inputText: "Maestro Omelette"
+- tapOn: "Ingredient name"
+- inputText: "egg"
+- tapOn: "Add"
+- assertVisible: "egg"
+- tapOn: "Save & Log Now"
+
+- assertVisible: 'Logged "Maestro Omelette"'
+
+- tapOn: "Progress"
+- assertVisible: "Logged saved meal: Maestro Omelette"
