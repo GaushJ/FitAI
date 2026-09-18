@@ -22,7 +22,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     ...config.ios,
     bundleIdentifier: IOS_BUNDLE_ID,
-    icon: "./assets/expo.icon",
+    // Falls back to the top-level `icon` (1024x1024 PNG) rather than the
+    // newer .icon/Icon Composer directory format — that format's JSON schema
+    // isn't documented well enough yet to hand-author with confidence.
   },
   android: {
     ...config.android,
@@ -30,7 +32,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     adaptiveIcon: {
       backgroundColor: "#0B0C09",
       foregroundImage: "./assets/images/android-icon-foreground.png",
-      backgroundImage: "./assets/images/android-icon-background.png",
       monochromeImage: "./assets/images/android-icon-monochrome.png",
     },
     predictiveBackGestureEnabled: false,
