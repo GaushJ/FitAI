@@ -4,7 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Bookmark, Dumbbell, Flame, Settings } from "lucide-react-native";
 import type { BottomSheetModal } from "@gorhom/bottom-sheet";
 import { Banner, LoadingSpinner } from "@/components/ui";
-import { getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
+import { deleteMeal, getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
 import {
   MacroProgress,
   MealComposer,
@@ -18,6 +18,7 @@ import type {
   DashboardResponse,
   FrequentMeal,
   Ingredient,
+  MealLog,
   QuickLogResponse,
   TrackMealResponse,
 } from "@/features/dashboard/types";
@@ -141,6 +142,24 @@ export default function DashboardScreen() {
     }
   };
 
+  const handleDeleteMeal = (meal: MealLog) => {
+    Alert.alert("Delete meal?", `"${meal.raw_transcript}" will be removed permanently.`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteMeal(meal.id);
+            await loadDashboard();
+          } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to delete meal.");
+          }
+        },
+      },
+    ]);
+  };
+
   const handleDeleteSavedMeal = (meal: SavedMeal) => {
     Alert.alert("Delete saved meal?", `"${meal.name}" will be removed permanently.`, [
       { text: "Cancel", style: "cancel" },
@@ -229,7 +248,9 @@ export default function DashboardScreen() {
             loggingId={savedLoggingId}
           />
 
-          {dashboard ? <TodayLogList meals={dashboard.meals} onEditIngredient={handleEditIngredient} /> : null}
+          {dashboard ? (
+            <TodayLogList meals={dashboard.meals} onEditIngredient={handleEditIngredient} onDeleteMeal={handleDeleteMeal} />
+          ) : null}
         </ScrollView>
       )}
 

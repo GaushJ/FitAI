@@ -22,12 +22,21 @@ const meal: MealLog = {
 
 describe("TodayLogList", () => {
   it("shows an empty state when there are no meals", async () => {
-    await render(<TodayLogList meals={[]} onEditIngredient={() => {}} />);
+    await render(<TodayLogList meals={[]} onEditIngredient={() => {}} onDeleteMeal={() => {}} />);
     expect(screen.getByText("No meals logged yet today")).toBeTruthy();
   });
 
+  it("shows the full macro breakdown for a meal without needing to expand it", async () => {
+    await render(<TodayLogList meals={[meal]} onEditIngredient={() => {}} onDeleteMeal={() => {}} />);
+
+    expect(screen.getByText("320 kcal")).toBeTruthy();
+    expect(screen.getByText("P 18g")).toBeTruthy();
+    expect(screen.getByText("C 30g")).toBeTruthy();
+    expect(screen.getByText("F 12g")).toBeTruthy();
+  });
+
   it("shows ingredient detail only after the row is expanded", async () => {
-    await render(<TodayLogList meals={[meal]} onEditIngredient={() => {}} />);
+    await render(<TodayLogList meals={[meal]} onEditIngredient={() => {}} onDeleteMeal={() => {}} />);
 
     expect(screen.getByText(/two eggs and toast/)).toBeTruthy();
     expect(screen.queryByText(/egg · 100g/)).toBeNull();
@@ -39,11 +48,21 @@ describe("TodayLogList", () => {
 
   it("fires onEditIngredient with the meal id, index, and ingredient", async () => {
     const onEditIngredient = jest.fn();
-    await render(<TodayLogList meals={[meal]} onEditIngredient={onEditIngredient} />);
+    await render(<TodayLogList meals={[meal]} onEditIngredient={onEditIngredient} onDeleteMeal={() => {}} />);
 
     await fireEvent.press(screen.getByRole("button"));
     await fireEvent.press(screen.getByLabelText("Edit egg"));
 
     expect(onEditIngredient).toHaveBeenCalledWith(1, 0, ingredient);
+  });
+
+  it("fires onDeleteMeal with the meal once expanded", async () => {
+    const onDeleteMeal = jest.fn();
+    await render(<TodayLogList meals={[meal]} onEditIngredient={() => {}} onDeleteMeal={onDeleteMeal} />);
+
+    await fireEvent.press(screen.getByRole("button"));
+    await fireEvent.press(screen.getByLabelText('Delete meal "two eggs and toast"'));
+
+    expect(onDeleteMeal).toHaveBeenCalledWith(meal);
   });
 });

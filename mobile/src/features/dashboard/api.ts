@@ -66,3 +66,7 @@ export function updateMealIngredient(
 ): Promise<Pick<MealLog, "id" | "ingredients" | "macros">> {
   return apiRequest(`/api/meals/${mealId}/ingredients/${ingredientIndex}`, { method: "PATCH", json: payload });
 }
+
+export function deleteMeal(mealId: number): Promise<{ status: string; meal_id: number }> {
+  return apiRequest(`/api/meals/${mealId}`, { method: "DELETE" });
+}
