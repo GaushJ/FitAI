@@ -1,3 +1,5 @@
+import type { StoredBodyProfile } from "@/features/settings/types";
+
 export interface Macros {
   calories: number;
   protein: number;
@@ -23,7 +25,7 @@ export interface MealLog {
   ingredients: Ingredient[];
 }
 
-export interface DashboardUser {
+export interface DashboardUser extends StoredBodyProfile {
   name: string;
   username: string;
   current_streak: number;

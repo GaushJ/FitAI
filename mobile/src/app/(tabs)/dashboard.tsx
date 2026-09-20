@@ -268,13 +268,8 @@ export default function DashboardScreen() {
       {dashboard ? (
         <SettingsSheet
           ref={settingsSheetRef}
-          initialValues={{
-            name: dashboard.user.name,
-            target_calories: dashboard.user.target_calories,
-            target_protein: dashboard.user.target_protein,
-            target_carbs: dashboard.user.target_carbs,
-            target_fat: dashboard.user.target_fat,
-          }}
+          // Stable reference: the form only re-syncs when the dashboard actually reloads the user.
+          initialValues={dashboard.user}
           onSaved={(updated) => {
             setDashboard((prev) => (prev ? { ...prev, user: { ...prev.user, ...updated } } : prev));
             setSuccessMessage("Targets updated!");
