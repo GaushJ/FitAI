@@ -1,4 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
 @import "tailwindcss";
 
 /* ── GetFitbro design tokens ────────────────────────────────────────── */
@@ -38,16 +37,52 @@
   --color-cyan-400: #C9F24D;
   --color-cyan-200: #D4F56A;
 
-  --font-sans: 'Hanken Grotesk', system-ui, sans-serif;
-  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  /* Semantic brand tokens — prefer these over raw hex in components */
+  --color-accent: #C9F24D;
+  --color-accent-light: #D4F56A;
+  --color-ink: #0B0C09;
+  --color-heat: #FF8A4C;
+
+  /* Landing-page motion */
+  --animate-fv-up: fv-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
+  --animate-fv-pulse: fv-pulse 2.2s ease-out infinite;
+  --animate-fv-blink: fv-blink 1s step-end infinite;
+  --animate-fv-float: fv-float 5s ease-in-out infinite;
+  --animate-fv-marquee: fv-marquee 26s linear infinite;
+
+  @keyframes fv-up {
+    from { opacity: 0; transform: translateY(34px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes fv-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 242, 77, 0.45); }
+    70% { box-shadow: 0 0 0 22px rgba(201, 242, 77, 0); }
+  }
+  @keyframes fv-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0; }
+  }
+  @keyframes fv-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  @keyframes fv-marquee {
+    to { transform: translateX(-50%); }
+  }
+
+  /* Family variables are provided by next/font in app/layout.tsx */
+  --font-sans: var(--font-hanken), system-ui, sans-serif;
+  --font-display: var(--font-bricolage), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), monospace;
 }
 
 /* ── Base ────────────────────────────────────────────────────────────── */
+html { scroll-behavior: smooth; }
+
 body {
   background: #0B0C09;
   color: #F4F5EF;
-  font-family: 'Hanken Grotesk', system-ui, sans-serif;
+  font-family: var(--font-hanken), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 

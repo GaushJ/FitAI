@@ -1,0 +1,11 @@
+# Confirms every empty-state message actually renders for a brand-new
+# account with nothing logged yet. Composes signup.yaml (not login.yaml) so
+# it's guaranteed to be a fresh, empty account every run.
+---
+- runFlow: signup.yaml
+
+- assertVisible: "Log the same meal twice and it'll show up here"
+- assertVisible: "No meals logged yet today"
+
+- tapOn: "Progress"
+- assertVisible: "No meals logged yet. Start tracking on the dashboard!"

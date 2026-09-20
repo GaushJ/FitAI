@@ -1,0 +1,25 @@
+# Logs into a fixed, pre-existing test account and leaves you on the
+# dashboard. Composed by other flows via `runFlow: login.yaml` so they don't
+# each re-implement the login sequence.
+#
+# One-time setup before using this (and anything that composes it):
+# create the account once — easiest way is to open the app yourself and
+# sign up with username "maestro_fixed" / password "Maestro1234", or copy
+# signup.yaml and hardcode those values in place of the random ones.
+---
+- launchApp:
+    clearState: true
+- tapOn: "your_username"
+- inputText: "maestro_fixed"
+- tapOn: "••••••••"
+- inputText: "Maestro1234"
+
+# The "Sign In" tab (active by default) and the submit button both read
+# "Sign In" — index 1 is the submit button, since the tab bar renders above
+# the form. If Maestro reports this ambiguous on your install, replace with
+# a testID-based selector instead.
+- tapOn:
+    text: "Sign In"
+    index: 1
+
+- assertVisible: "Log a meal… e.g. 2 eggs and toast"

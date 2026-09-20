@@ -1,0 +1,31 @@
+# Creates a brand-new account with a collision-free username each run, so
+# this is safe to re-run as many times as you like (unlike a fixed test
+# account, which the backend will reject as "already taken" on a second
+# signup). Can be run standalone or composed into other flows with
+# `runFlow: signup.yaml`, which leaves you signed in and on the dashboard.
+---
+- launchApp:
+    clearState: true
+- runScript: random_user.js
+
+# Login screen opens on the "Sign In" tab by default — switch to signup.
+- tapOn: "Create Account"
+
+- tapOn: "Your Name"
+- inputText: ${output.name}
+- tapOn: "your_handle"
+- inputText: ${output.username}
+- tapOn: "Min 6 characters"
+- inputText: "Maestro1234"
+- tapOn: "••••••••"
+- inputText: "Maestro1234"
+
+# Both the (now-active) "Create Account" tab and the submit button read
+# "Create Account" at this point — index 1 is the submit button, since the
+# tab bar renders above the form. If Maestro reports this ambiguous on your
+# install, replace with a testID-based selector instead.
+- tapOn:
+    text: "Create Account"
+    index: 1
+
+- assertVisible: "Log a meal… e.g. 2 eggs and toast"

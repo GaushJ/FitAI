@@ -1,4 +1,6 @@
-"""Brand Preferences (global — no auth required)."""
+"""Brand Preferences — per-user (see migrations/0002_brand_preferences_user_scope.sql).
+Distinct from IngredientCache, which stays global/shared macro data that every
+user's preferences resolve against."""
 import base64
 import datetime
 import io
@@ -13,12 +15,13 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.security import get_current_user
 from db.crud.brand_preferences import (
     delete_brand_preference,
     get_brand_preferences,
     set_brand_preference,
 )
-from db.models import BrandPreference, IngredientCache
+from db.models import BrandPreference, IngredientCache, User
 from db.session import get_db
 from schemas.brand_preferences import (
     BrandPreferenceSchema,
@@ -30,8 +33,11 @@ router = APIRouter(prefix="/api/brand-preferences", tags=["brand-preferences"])
 
 
 @router.get("")
-async def list_brand_preferences(db: AsyncSession = Depends(get_db)):
-    prefs = await get_brand_preferences(db)
+async def list_brand_preferences(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    prefs = await get_brand_preferences(db, current_user.id)
     result = []
     for p in prefs:
         # Look up cached macros for this ingredient+brand pair
@@ -56,8 +62,12 @@ async def list_brand_preferences(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("")
-async def upsert_brand_preference(payload: BrandPreferenceSchema, db: AsyncSession = Depends(get_db)):
-    pref = await set_brand_preference(db, payload.ingredient_name, payload.preferred_brand)
+async def upsert_brand_preference(
+    payload: BrandPreferenceSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    pref = await set_brand_preference(db, current_user.id, payload.ingredient_name, payload.preferred_brand)
     # If macro data was provided, also upsert the ingredient cache
     if any(v is not None for v in [payload.calories_per_100g, payload.protein_per_100g, payload.carbs_per_100g, payload.fat_per_100g]):
         name_l = payload.ingredient_name.strip().lower()
@@ -84,9 +94,19 @@ async def upsert_brand_preference(payload: BrandPreferenceSchema, db: AsyncSessi
 
 
 @router.patch("/{ingredient_name}/macros")
-async def update_preference_macros(ingredient_name: str, payload: MacroUpdateSchema, db: AsyncSession = Depends(get_db)):
+async def update_preference_macros(
+    ingredient_name: str,
+    payload: MacroUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     name_l = ingredient_name.strip().lower()
-    pref_res = await db.execute(select(BrandPreference).where(BrandPreference.ingredient_name == name_l))
+    pref_res = await db.execute(
+        select(BrandPreference).where(
+            BrandPreference.user_id == current_user.id,
+            BrandPreference.ingredient_name == name_l,
+        )
+    )
     pref = pref_res.scalar_one_or_none()
     if not pref:
         raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
@@ -113,12 +133,22 @@ async def update_preference_macros(ingredient_name: str, payload: MacroUpdateSch
 
 
 @router.patch("/{ingredient_name}/rename")
-async def rename_brand_preference(ingredient_name: str, payload: PrefRenameSchema, db: AsyncSession = Depends(get_db)):
+async def rename_brand_preference(
+    ingredient_name: str,
+    payload: PrefRenameSchema,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     old_name = ingredient_name.strip().lower()
     new_name = payload.new_ingredient_name.strip().lower()
     new_brand = payload.new_brand.strip().lower()
 
-    pref_res = await db.execute(select(BrandPreference).where(BrandPreference.ingredient_name == old_name))
+    pref_res = await db.execute(
+        select(BrandPreference).where(
+            BrandPreference.user_id == current_user.id,
+            BrandPreference.ingredient_name == old_name,
+        )
+    )
     pref = pref_res.scalar_one_or_none()
     if not pref:
         raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
@@ -141,25 +171,32 @@ async def rename_brand_preference(ingredient_name: str, payload: PrefRenameSchem
 
 
 @router.delete("/{ingredient_name}")
-async def remove_brand_preference(ingredient_name: str, db: AsyncSession = Depends(get_db)):
-    deleted = await delete_brand_preference(db, ingredient_name)
+async def remove_brand_preference(
+    ingredient_name: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    deleted = await delete_brand_preference(db, current_user.id, ingredient_name)
     if not deleted:
         raise HTTPException(status_code=404, detail=f"No preference found for '{ingredient_name}'")
     return {"status": "deleted", "ingredient_name": ingredient_name}
 
 
 @router.get("/export")
-async def export_brand_preferences(db: AsyncSession = Depends(get_db)):
+async def export_brand_preferences(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
-    Export all brand preferences + their cached nutrition data as a styled .xlsx file.
+    Export this user's brand preferences + their cached nutrition data as a styled .xlsx file.
     The downloaded file can be re-uploaded via /api/brand-preferences/import to bulk-restore
     preferences on a fresh deployment or share them with another device.
     """
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-    # ── Fetch all preferences + cache entries ────────────────────────────────
-    prefs  = await get_brand_preferences(db)
+    # ── Fetch this user's preferences + cache entries ────────────────────────
+    prefs  = await get_brand_preferences(db, current_user.id)
     caches_res = await db.execute(select(IngredientCache))
     caches = caches_res.scalars().all()
 
@@ -261,6 +298,7 @@ async def export_brand_preferences(db: AsyncSession = Depends(get_db)):
 @router.post("/import")
 async def import_brand_preferences(
     file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -300,7 +338,7 @@ async def import_brand_preferences(
         brand_lower = brand.lower()
 
         # Save brand preference
-        await set_brand_preference(db, ingredient, brand)
+        await set_brand_preference(db, current_user.id, ingredient, brand)
 
         # If nutritional columns are provided, upsert ingredient cache
         try:
@@ -349,6 +387,7 @@ async def set_brand_from_label(
     preferred_brand: str = Form(...),
     image: UploadFile = File(...),
     unit: str = Form("g"),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
     x_anthropic_key: Optional[str] = Header(None),
 ):
@@ -409,6 +448,6 @@ async def set_brand_from_label(
     else:
         db.add(IngredientCache(name=name_lower, brand=brand_lower, unit=unit_val, **macros))
 
-    await set_brand_preference(db, ingredient_name, preferred_brand)
+    await set_brand_preference(db, current_user.id, ingredient_name, preferred_brand)
     await db.commit()
     return {"status": "success", "ingredient_name": name_lower, "preferred_brand": brand_lower, "macros": macros, "unit": unit, "source": "label_image"}

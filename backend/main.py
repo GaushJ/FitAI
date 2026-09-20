@@ -1,6 +1,16 @@
 import os
 import shutil
+import sys
 from contextlib import asynccontextmanager
+
+# Several services print Unicode symbols (→ ✓ ✗ ⚠) in debug logs. On Windows,
+# Python's stdout/stderr default to the console's legacy codepage (cp1252),
+# which can't encode them — raising UnicodeEncodeError and turning a log
+# statement into a request-crashing exception. Force UTF-8 so logging is safe
+# regardless of the host OS/console encoding.
+if sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
