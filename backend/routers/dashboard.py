@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import get_current_user
-from db.crud.users import update_user_streak
+from db.crud.users import body_profile_dict, update_user_streak
 from db.models import DailyFoodLog, FrequentMeal, User
 from db.session import get_db
 from services.frequent_meals import upsert_frequent_meal
@@ -60,6 +60,7 @@ async def get_dashboard(
             "target_protein": current_user.target_protein,
             "target_carbs": current_user.target_carbs,
             "target_fat": current_user.target_fat,
+            **body_profile_dict(current_user),
         },
         "totals": {
             "calories": round(today_calories, 1),

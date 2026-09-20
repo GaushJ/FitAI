@@ -26,6 +26,15 @@ class User(Base):
     target_protein: Mapped[float] = mapped_column(Float, default=150.0)
     target_carbs: Mapped[float] = mapped_column(Float, default=200.0)
     target_fat: Mapped[float] = mapped_column(Float, default=65.0)
+    # Body profile the targets are derived from (all optional — see migrations/0004).
+    # Enum-valued columns store the string values of services.nutrition_targets enums.
+    sex: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    age: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    height_cm: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    weight_kg: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    activity_level: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    goal: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
     current_streak: Mapped[int] = mapped_column(Integer, default=0)
     last_active_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
 

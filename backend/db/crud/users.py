@@ -67,3 +67,11 @@ async def update_user_streak(session: AsyncSession, user_id: int) -> int:
     user.last_active_date = today
     await session.commit()
     return user.current_streak
+
+
+BODY_PROFILE_FIELDS = ("sex", "age", "height_cm", "weight_kg", "activity_level", "goal")
+
+
+def body_profile_dict(user: "User") -> dict:
+    """The optional body-profile fields as they appear in API responses."""
+    return {field: getattr(user, field) for field in BODY_PROFILE_FIELDS}
