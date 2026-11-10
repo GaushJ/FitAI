@@ -1,9 +1,9 @@
-import { Sliders, Trash2, Zap } from "lucide-react";
+import { SlidersHorizontal, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
 import { IconButton } from "@/components/atoms/IconButton";
-import { SectionHeading } from "@/components/molecules/SectionHeading";
 import { MealTemplateCard } from "@/components/molecules/MealTemplateCard";
+import { SectionHeading } from "@/components/molecules/SectionHeading";
 import type { FrequentMeal } from "@/features/frequent-meals/types";
 
 interface FrequentMealsRowProps {
@@ -14,24 +14,17 @@ interface FrequentMealsRowProps {
   onRemove: (mealId: number) => void;
 }
 
-/** Horizontally scrolling shortcuts for meals the user logs repeatedly. */
+/** One-tap shortcuts for meals the user logs repeatedly. */
 export function FrequentMealsRow({ meals, loggingId, onLog, onAdjustPortions, onRemove }: FrequentMealsRowProps) {
   if (meals.length === 0) return null;
 
   return (
-    <Card padding="md">
-      <SectionHeading
-        size="sm"
-        className="mb-3"
-        icon={<Zap className="text-yellow-400" />}
-        action={
-          <span className="text-[10px] uppercase tracking-wider text-slate-500">Tap to quick-log</span>
-        }
-      >
-        Frequent Meals
+    <Card>
+      <SectionHeading className="mb-4" subtitle="Based on your history">
+        Frequent meals
       </SectionHeading>
 
-      <div className="flex gap-3 overflow-x-auto pb-2">
+      <div className="space-y-3">
         {meals.map((meal) => (
           <MealTemplateCard
             key={meal.id}
@@ -41,8 +34,8 @@ export function FrequentMealsRow({ meals, loggingId, onLog, onAdjustPortions, on
             actions={
               <>
                 <Button
+                  variant="dark"
                   size="xs"
-                  className="flex-1"
                   icon={<Zap />}
                   loading={loggingId === meal.id}
                   title="Log this meal now"
@@ -50,10 +43,15 @@ export function FrequentMealsRow({ meals, loggingId, onLog, onAdjustPortions, on
                 >
                   Log
                 </Button>
-                <IconButton label="Adjust portions before logging" onClick={() => onAdjustPortions(meal)}>
-                  <Sliders />
+                <IconButton label="Adjust portions before logging" variant="outline" onClick={() => onAdjustPortions(meal)}>
+                  <SlidersHorizontal />
                 </IconButton>
-                <IconButton label="Remove from frequent meals" variant="danger" onClick={() => onRemove(meal.id)}>
+                <IconButton
+                  label="Remove from frequent meals"
+                  variant="danger"
+                  className="ml-auto"
+                  onClick={() => onRemove(meal.id)}
+                >
                   <Trash2 />
                 </IconButton>
               </>

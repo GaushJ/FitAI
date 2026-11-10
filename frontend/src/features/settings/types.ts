@@ -15,6 +15,7 @@ export interface BodyProfile {
 export interface UserProfile extends Partial<{ [K in keyof BodyProfile]: BodyProfile[K] | null }> {
   name: string;
   current_streak: number;
+  is_pro: boolean;
   target_calories: number;
   target_protein: number;
   target_carbs: number;

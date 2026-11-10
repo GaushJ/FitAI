@@ -1,68 +1,71 @@
 /** @type {import('tailwindcss').Config} */
+// Same token names and values as the web app (frontend/src/app/globals.css `@theme`).
+// JS-side copies for icon colours and shadows live in src/theme/colors.ts. Change all three together.
 module.exports = {
   content: ["./src/**/*.{js,jsx,ts,tsx}"],
   presets: [require("nativewind/preset")],
   theme: {
     extend: {
       colors: {
-        // Base surfaces (dark theme — GetFitBro has no light theme on web)
-        bg: "#0B0C09",
+        card: "#ffffff",
         surface: {
-          DEFAULT: "#16180F",
-          raised: "#1A1C12",
-          high: "#1E2018",
-          inset: "#0F100B",
+          DEFAULT: "#fbf9f5",
+          low: "#f5f3ef",
+          container: "#efeeea",
+          high: "#eae8e4",
+          highest: "#e4e2de",
         },
-        border: {
-          DEFAULT: "#2A2D1E",
-          subtle: "rgba(255,255,255,0.08)",
+        ink: {
+          DEFAULT: "#1b1c1a",
+          muted: "#5f5e5e",
+          subtle: "#8b8a88",
         },
-        text: {
-          primary: "#F4F5EF",
-          secondary: "#8E9085",
-          muted: "#6E7066",
-          tertiary: "#A2A498",
+        line: {
+          DEFAULT: "#e4e2de",
+          strong: "#c8c6c5",
         },
-        // Brand accent — the lime used for CTAs, active states, progress fills
-        accent: {
-          DEFAULT: "#C9F24D",
-          hover: "#D4F56A",
-          dim: "#AFDF33",
-        },
-        // Macro-specific colors (match web's per-macro coding)
-        macro: {
-          calories: "#fb923c", // orange-400
-          protein: "#C9F24D", // accent lime
-          carbs: "#22d3ee", // cyan-400
-          fat: "#fb7185", // rose-400
+        primary: {
+          DEFAULT: "#ba090a",
+          bright: "#df2c22",
+          dark: "#930003",
+          soft: "#ffdad5",
         },
         success: {
-          DEFAULT: "#34d399", // emerald-400
-          bg: "rgba(16,185,129,0.08)",
+          DEFAULT: "#15803d",
+          bright: "#22c55e",
+          soft: "#dcfce7",
+        },
+        warning: {
+          DEFAULT: "#b45309",
+          soft: "#fef3c7",
         },
         danger: {
-          DEFAULT: "#f87171", // red-400
-          bg: "rgba(239,68,68,0.08)",
+          DEFAULT: "#ba1a1a",
+          soft: "#ffdad6",
         },
-        warn: {
-          DEFAULT: "#fbbf24", // amber-400
+        macro: {
+          calories: "#ba090a",
+          protein: "#15803d",
+          carbs: "#c2410c",
+          fat: "#be123c",
         },
       },
       borderRadius: {
-        xs: "8px",
-        sm: "12px",
-        md: "16px",
-        lg: "24px",
-        // full is already a Tailwind default (9999px)
+        xs: "2px",
       },
       fontFamily: {
-        display: ["BricolageGrotesque_700Bold"],
-        "display-medium": ["BricolageGrotesque_600SemiBold"],
-        sans: ["HankenGrotesk_400Regular"],
-        "sans-medium": ["HankenGrotesk_500Medium"],
-        "sans-semibold": ["HankenGrotesk_600SemiBold"],
-        "sans-bold": ["HankenGrotesk_700Bold"],
-        mono: ["JetBrainsMono_500Medium"],
+        // Oswald (web `font-display` + weight)
+        "display-medium": ["Oswald_500Medium"],
+        "display-semibold": ["Oswald_600SemiBold"],
+        display: ["Oswald_700Bold"],
+        // Inter (web `font-sans` + weight)
+        sans: ["Inter_400Regular"],
+        "sans-medium": ["Inter_500Medium"],
+        "sans-semibold": ["Inter_600SemiBold"],
+        "sans-bold": ["Inter_700Bold"],
+        // JetBrains Mono (web `font-mono` + weight)
+        mono: ["JetBrainsMono_400Regular"],
+        "mono-medium": ["JetBrainsMono_500Medium"],
         "mono-bold": ["JetBrainsMono_700Bold"],
       },
     },

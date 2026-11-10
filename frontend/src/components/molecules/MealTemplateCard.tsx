@@ -4,27 +4,28 @@ import type { Macros } from "@/types/nutrition";
 interface MealTemplateCardProps {
   name: string;
   macros: Macros;
-  /** Muted line under the macros, e.g. "3× logged". */
+  /** Small tag in the top-right corner, e.g. "4× logged". */
   meta: string;
-  /** Action buttons pinned to the bottom of the card. */
+  /** Optional muted line under the name, e.g. the ingredient list. */
+  description?: string;
+  /** Action buttons along the bottom of the card. */
   actions: ReactNode;
 }
 
-/** Compact fixed-width card used in the horizontally scrolling meal rows. */
-export function MealTemplateCard({ name, macros, meta, actions }: MealTemplateCardProps) {
+/** A frequent or saved meal: name, calories, macro split and quick actions. */
+export function MealTemplateCard({ name, macros, meta, description, actions }: MealTemplateCardProps) {
   return (
-    <div className="relative flex w-44 shrink-0 flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 transition hover:border-accent/30">
-      <p className="line-clamp-2 text-xs font-semibold leading-tight text-slate-200">{name}</p>
-
-      <div className="flex flex-col gap-0.5 text-[10px] text-slate-500">
-        <span className="font-bold text-orange-400">{Math.round(macros.calories)} kcal</span>
-        <span>
-          P {macros.protein}g · C {macros.carbs}g · F {macros.fat}g
-        </span>
-        <span className="text-slate-600">{meta}</span>
+    <div className="border border-line bg-surface-low p-4 transition hover:border-line-strong">
+      <div className="flex items-start justify-between gap-3">
+        <p className="font-display text-lg font-semibold leading-tight text-ink">{name}</p>
+        <span className="shrink-0 bg-surface-highest px-1.5 py-0.5 font-mono text-[10px] text-ink-muted">{meta}</span>
       </div>
-
-      <div className="mt-auto flex gap-1.5">{actions}</div>
+      {description && <p className="mt-1 line-clamp-2 font-mono text-[11px] text-ink-muted">{description}</p>}
+      <p className="mt-1 font-display text-xl font-semibold text-primary">{Math.round(macros.calories)} kcal</p>
+      <p className="font-mono text-[11px] text-ink-muted">
+        P {macros.protein}g · C {macros.carbs}g · F {macros.fat}g
+      </p>
+      <div className="mt-3 flex items-center gap-1.5 border-t border-line pt-3">{actions}</div>
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type { DashboardData } from "@/features/dashboard/types";
 const DEFAULT_PROFILE: UserProfile = {
   name: "",
   current_streak: 0,
+  is_pro: false,
   target_calories: 2000,
   target_protein: 150,
   target_carbs: 200,

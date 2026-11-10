@@ -1,32 +1,35 @@
-import { apiRequest } from "@/lib/api/client";
-import type { LogSavedMealResponse, ResolvedIngredientMacros, SavedMeal, SavedMealIngredient } from "./types";
+import { apiRequest as request } from "@/lib/api/client";
+import type { Ingredient, Macros } from "@/types/nutrition";
+import type { SavedMeal } from "./types";
 
-export function getSavedMeals(): Promise<SavedMeal[]> {
-  return apiRequest<SavedMeal[]>("/api/saved-meals");
+interface SavedMealPayload {
+  name: string;
+  ingredients: Ingredient[];
 }
 
-export function createSavedMeal(name: string, ingredients: SavedMealIngredient[]): Promise<SavedMeal> {
-  return apiRequest<SavedMeal>("/api/saved-meals", { method: "POST", json: { name, ingredients } });
-}
+export const fetchSavedMeals = () => request<SavedMeal[]>("/api/saved-meals");
 
-export function updateSavedMeal(id: number, name: string, ingredients: SavedMealIngredient[]): Promise<SavedMeal> {
-  return apiRequest<SavedMeal>(`/api/saved-meals/${id}`, { method: "PUT", json: { name, ingredients } });
-}
+export const createSavedMeal = (payload: SavedMealPayload) =>
+  request<SavedMeal>("/api/saved-meals", {
+    method: "POST",
+    json: payload,
+    errorMessage: "Failed to save meal.",
+  });
 
-export function deleteSavedMeal(id: number): Promise<{ status: string; meal_id: number }> {
-  return apiRequest(`/api/saved-meals/${id}`, { method: "DELETE" });
-}
+export const updateSavedMeal = (mealId: number, payload: SavedMealPayload) =>
+  request<SavedMeal>(`/api/saved-meals/${mealId}`, {
+    method: "PUT",
+    json: payload,
+    errorMessage: "Failed to save meal.",
+  });
 
-export function logSavedMeal(id: number, ingredients?: SavedMealIngredient[]): Promise<LogSavedMealResponse> {
-  return apiRequest(`/api/saved-meals/${id}/log`, {
+export const deleteSavedMeal = (mealId: number) =>
+  request(`/api/saved-meals/${mealId}`, { method: "DELETE" });
+
+/** Logs a saved meal; pass `ingredients` to override the saved quantities. */
+export const logSavedMeal = (mealId: number, ingredients?: Ingredient[]) =>
+  request<{ name: string; macros?: Macros }>(`/api/saved-meals/${mealId}/log`, {
     method: "POST",
     json: ingredients ? { ingredients } : {},
+    errorMessage: "Logging failed",
   });
-}
-
-export function resolveIngredient(name: string, brand: string, weightG: number): Promise<ResolvedIngredientMacros> {
-  return apiRequest<ResolvedIngredientMacros>("/api/resolve-ingredient", {
-    method: "POST",
-    json: { name, brand, weight_g: weightG },
-  });
-}

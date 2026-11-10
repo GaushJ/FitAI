@@ -6,10 +6,11 @@ import { secureStorage } from "./secureStorage";
  * The header names are what the backend actually reads (see the
  * `x_anthropic_key` / `x_groq_key` params in backend/routers).
  */
-export const API_KEY_PROVIDERS = ["anthropic", "groq"] as const;
+export const API_KEY_PROVIDERS = ["anthropic", "groq", "tavily"] as const;
 export type ApiKeyProvider = (typeof API_KEY_PROVIDERS)[number];
 
-const HEADER_BY_PROVIDER: Record<ApiKeyProvider, string> = {
+// Tavily is listed and stored like on web, but neither app sends it: the backend only reads these two.
+const HEADER_BY_PROVIDER: Partial<Record<ApiKeyProvider, string>> = {
   anthropic: "X-Anthropic-Key",
   groq: "X-Groq-Key",
 };
@@ -39,7 +40,8 @@ export async function getApiKeyHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {};
   for (const provider of API_KEY_PROVIDERS) {
     const key = keys[provider];
-    if (key) headers[HEADER_BY_PROVIDER[provider]] = key;
+    const header = HEADER_BY_PROVIDER[provider];
+    if (key && header) headers[header] = key;
   }
   return headers;
 }

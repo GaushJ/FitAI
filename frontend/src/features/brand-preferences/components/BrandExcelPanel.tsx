@@ -13,24 +13,12 @@ import { exportBrandPreferences, importBrandPreferences } from "@/features/brand
 
 const EXPECTED_COLUMNS = ["Ingredient", "Brand", "Calories/100g", "Protein/100g", "Carbs/100g", "Fat/100g"];
 
-interface ActionCardProps {
-  title: ReactNode;
-  description: string;
-  borderClassName: string;
-  action: ReactNode;
-}
-
-function ActionCard({ title, description, borderClassName, action }: ActionCardProps) {
+function ActionCard({ title, description, action }: { title: string; description: string; action: ReactNode }) {
   return (
-    <div
-      className={cn(
-        "flex flex-col justify-between gap-3 rounded-2xl border bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:gap-4",
-        borderClassName,
-      )}
-    >
+    <div className="flex flex-col justify-between gap-3 border border-line bg-surface-low p-4 sm:flex-row sm:items-center sm:gap-6">
       <div>
-        <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">{title}</p>
-        <p className="mt-0.5 text-[10px] text-slate-500">{description}</p>
+        <p className="font-display text-lg font-semibold uppercase text-ink">{title}</p>
+        <p className="mt-0.5 text-sm text-ink-muted">{description}</p>
       </div>
       {action}
     </div>
@@ -76,48 +64,30 @@ export function BrandExcelPanel({ preferenceCount, onImported }: BrandExcelPanel
   };
 
   return (
-    <div className="space-y-5">
-      <p className="text-xs leading-relaxed text-slate-400">
-        Download your current brand preferences as a spreadsheet, edit it offline, then re-upload to restore or
-        bulk-add preferences in one go.
+    <div className="space-y-4">
+      <p className="text-sm text-ink-muted">
+        Download your brand preferences as a spreadsheet, edit it offline, then re-upload to restore or bulk-add
+        preferences in one go.
       </p>
 
       <input ref={fileInputRef} type="file" accept=".xlsx" className="hidden" onChange={handleImport} />
 
       <ActionCard
-        borderClassName="border-emerald-900/40"
-        title={
-          <>
-            <span className="text-emerald-400">↓</span> Download Preferences
-          </>
-        }
-        description={`Exports all ${pluralize(preferenceCount, "saved brand")} with their nutrition data as a styled .xlsx file.`}
+        title="Export"
+        description={`Downloads all ${pluralize(preferenceCount, "saved brand")} with their nutrition data as .xlsx.`}
         action={
-          <Button
-            variant="success"
-            size="sm"
-            className="w-full px-4 py-2 shadow sm:w-auto"
-            icon={<Download />}
-            disabled={preferenceCount === 0}
-            onClick={handleExport}
-          >
+          <Button variant="outline" icon={<Download />} disabled={preferenceCount === 0} onClick={handleExport}>
             Export .xlsx
           </Button>
         }
       />
 
       <ActionCard
-        borderClassName="border-accent/15"
-        title={
-          <>
-            <span className="text-accent">↑</span> Upload &amp; Restore
-          </>
-        }
-        description="Upload a .xlsx file in the same format to bulk-set preferences and nutrition data in one step."
+        title="Import"
+        description="Upload a .xlsx in the same format to bulk-set preferences and nutrition data."
         action={
           <Button
-            size="sm"
-            className="w-full px-4 py-2 shadow sm:w-auto"
+            variant="dark"
             icon={<Upload />}
             loading={importing}
             loadingText="Importing..."
@@ -128,24 +98,19 @@ export function BrandExcelPanel({ preferenceCount, onImported }: BrandExcelPanel
         }
       />
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900 p-3">
-        <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Expected columns</p>
-        <div className="grid grid-cols-3 gap-1 text-center text-[9px] sm:grid-cols-6">
+      <div className="border border-line p-4">
+        <p className="mb-2 font-mono text-[11px] uppercase tracking-widest text-ink-muted">Expected columns</p>
+        <div className="grid grid-cols-2 gap-1.5 text-center font-mono text-[11px] sm:grid-cols-3 lg:grid-cols-6">
           {EXPECTED_COLUMNS.map((column, i) => (
             <div
               key={column}
-              className={cn(
-                "rounded px-1 py-1 font-mono font-bold",
-                i < 2
-                  ? "border border-accent/15 bg-accent/10 text-accent-light"
-                  : "border border-slate-800 bg-slate-950 text-slate-400",
-              )}
+              className={cn("px-1 py-1.5", i < 2 ? "bg-ink text-white" : "border border-line bg-surface-low text-ink-muted")}
             >
               {column}
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[10px] text-slate-600">
+        <p className="mt-2 text-xs text-ink-muted">
           Columns A–B are required. C–F are optional — fill them to also update the ingredient cache.
         </p>
       </div>

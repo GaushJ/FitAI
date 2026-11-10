@@ -12,32 +12,23 @@ interface EmptyStateProps {
   children?: ReactNode;
 }
 
-export function EmptyState({
-  icon,
-  title,
-  size = "lg",
-  bordered = true,
-  className,
-  children,
-}: EmptyStateProps) {
+export function EmptyState({ icon, title, size = "lg", bordered = true, className, children }: EmptyStateProps) {
   return (
     <div
       className={cn(
         "flex flex-col items-center justify-center px-4 text-center",
-        size === "lg" ? "py-16" : "py-8",
-        bordered && "rounded-2xl border border-dashed border-slate-900",
+        size === "lg" ? "py-14" : "py-7",
+        bordered && "border border-dashed border-line-strong bg-surface-low",
         className,
       )}
     >
       {icon && (
-        <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl border border-slate-900 bg-slate-950 text-slate-600 [&>svg]:size-5">
+        <div className="mb-3 flex size-11 items-center justify-center border border-line bg-card text-ink-subtle [&>svg]:size-5">
           {icon}
         </div>
       )}
-      {title && <h4 className="text-sm font-bold text-slate-300">{title}</h4>}
-      {children && (
-        <p className={cn("max-w-[280px] text-xs text-slate-500", title && "mt-1 max-w-[240px]")}>{children}</p>
-      )}
+      {title && <h4 className="font-display text-base font-semibold uppercase tracking-wide text-ink">{title}</h4>}
+      {children && <p className={cn("max-w-sm text-sm text-ink-muted", title && "mt-1")}>{children}</p>}
     </div>
   );
 }

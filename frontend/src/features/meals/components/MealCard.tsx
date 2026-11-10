@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import { MacroInline } from "@/components/molecules/MacroInline";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { pluralize } from "@/lib/nutrition";
 import { IngredientBreakdown } from "@/features/meals/components/IngredientBreakdown";
@@ -19,52 +18,55 @@ interface MealCardProps {
   onEditIngredient?: (index: number, ingredient: Ingredient) => void;
 }
 
-/** A logged meal: transcript + macro pill, expanding into its ingredient breakdown. */
-export function MealCard({
-  meal,
-  dateLabel,
-  expanded,
-  onToggle,
-  actions,
-  showTotal,
-  onEditIngredient,
-}: MealCardProps) {
-  const Chevron = expanded ? ChevronUp : ChevronDown;
+/** A logged meal: transcript + macro block, expanding into its ingredient breakdown. */
+export function MealCard({ meal, dateLabel, expanded, onToggle, actions, showTotal, onEditIngredient }: MealCardProps) {
+  const { macros } = meal;
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-900 bg-slate-950/70 transition duration-200 hover:border-slate-800">
-      <div className={cn("flex items-start", Boolean(actions) && "gap-2 pr-3")}>
+    <div className={cn("border bg-card transition", expanded ? "border-ink" : "border-line hover:border-line-strong")}>
+      <div className={cn("flex items-start", expanded && "bg-surface-low")}>
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
-          className="flex min-w-0 flex-1 cursor-pointer items-start justify-between gap-4 p-4 text-left"
+          className="flex min-w-0 flex-1 cursor-pointer flex-col gap-3 p-4 text-left sm:flex-row sm:items-center sm:justify-between"
         >
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-xs font-semibold italic leading-snug text-slate-200">
-              &ldquo;{meal.raw_transcript}&rdquo;
-            </p>
-            <span className="mt-1 block text-[10px] text-slate-500">
-              {dateLabel} · {pluralize(meal.ingredients.length, "ingredient")}
-            </span>
+          <div className="flex min-w-0 gap-3">
+            <span className="mt-1.5 size-2 shrink-0 bg-primary" />
+            <div className="min-w-0">
+              <p className="font-display text-base font-medium italic leading-snug text-ink">
+                &ldquo;{meal.raw_transcript}&rdquo;
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-ink-muted">
+                {dateLabel} · {pluralize(meal.ingredients.length, "ingredient")}
+              </p>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3">
-            <div className="rounded-xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-right">
-              <span className="text-xs font-bold leading-none text-orange-400">
-                {Math.round(meal.macros.calories)} kcal
-              </span>
-              <MacroInline macros={meal.macros} size="sm" showCalories={false} className="mt-0.5" />
+          <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
+            <div className="flex items-center gap-4 border border-line bg-card px-3 py-2">
+              <div className="text-center">
+                <p className="font-display text-2xl font-bold leading-none text-primary">{Math.round(macros.calories)}</p>
+                <p className="font-mono text-[10px] uppercase text-ink-muted">kcal</p>
+              </div>
+              <div className="grid grid-cols-3 gap-x-3 font-mono text-[11px]">
+                <span className="text-ink-muted">P</span>
+                <span className="text-ink-muted">C</span>
+                <span className="text-ink-muted">F</span>
+                <span className="text-ink">{macros.protein}g</span>
+                <span className="text-ink">{macros.carbs}g</span>
+                <span className="text-ink">{macros.fat}g</span>
+              </div>
             </div>
-            <Chevron className="h-4 w-4 shrink-0 text-slate-500" />
+            <ChevronDown className={cn("size-4 shrink-0 text-ink-muted transition-transform", expanded && "rotate-180")} />
           </div>
         </button>
 
-        {actions}
+        {actions && <div className="flex shrink-0 flex-col gap-1 p-2 sm:flex-row sm:self-center">{actions}</div>}
       </div>
 
       {expanded && (
-        <div className="border-t border-slate-900 px-4 pt-3 pb-4">
+        <div className="border-t border-line px-4 pt-3 pb-4">
           <IngredientBreakdown
             ingredients={meal.ingredients}
             total={showTotal ? meal.macros : undefined}

@@ -1,30 +1,30 @@
 import type { Metadata } from "next";
-import { Bricolage_Grotesque, Hanken_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Oswald } from "next/font/google";
 import "./globals.css";
 
 // Exposed as CSS variables and wired into Tailwind's font tokens in globals.css
 // (`font-sans`, `font-display`, `font-mono`).
-const hankenGrotesk = Hanken_Grotesk({
-  variable: "--font-hanken",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
 });
 
-const bricolageGrotesque = Bricolage_Grotesque({
-  variable: "--font-bricolage",
+const oswald = Oswald({
+  variable: "--font-oswald",
   subsets: ["latin"],
-  axes: ["opsz"],
+  weight: ["500", "600", "700"],
 });
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains",
   subsets: ["latin"],
-  weight: ["500", "700"],
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "GetFitbro | AI Meal & Macro Tracker",
-  description: "Track your daily macros, streaks, and calories with agentic AI that resolves brands, portions, and prep — type it or say it.",
+  title: "GetFitBro | Voice, Text & Label Macro Tracking",
+  description:
+    "Type, speak, or scan what you ate. GetFitBro parses the meal, applies your saved brands, and tracks calories, protein, carbs and fat.",
 };
 
 export default function RootLayout({
@@ -36,9 +36,9 @@ export default function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      className={`${hankenGrotesk.variable} ${bricolageGrotesque.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${oswald.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }

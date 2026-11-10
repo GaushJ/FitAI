@@ -2,13 +2,13 @@
 ---
 - launchApp:
     clearState: true
-- tapOn: "your_username"
+- tapOn: "your_handle"
 - inputText: "maestro_fixed"
 - tapOn: "••••••••"
 - inputText: "definitely-wrong-password"
 
 - tapOn:
-    text: "Sign In"
+    text: "Sign in"
     index: 1
 
 - assertVisible: "Invalid username or password."

@@ -5,8 +5,7 @@ import { Eye, EyeOff, Lock } from "lucide-react";
 import { FormField } from "@/components/molecules/FormField";
 import { AuthInput } from "@/features/auth/components/AuthInput";
 
-interface PasswordFieldProps
-  extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> {
+interface PasswordFieldProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "value" | "onChange"> {
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -19,7 +18,7 @@ export function PasswordField({ label, value, onChange, revealable, invalid, ...
   const [revealed, setRevealed] = useState(false);
 
   return (
-    <FormField label={label} labelClassName="text-slate-600">
+    <FormField label={label}>
       <AuthInput
         icon={Lock}
         type={revealed ? "text" : "password"}
@@ -33,9 +32,9 @@ export function PasswordField({ label, value, onChange, revealable, invalid, ...
               type="button"
               onClick={() => setRevealed((r) => !r)}
               aria-label={revealed ? "Hide password" : "Show password"}
-              className="absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer text-slate-600"
+              className="absolute top-1/2 right-3.5 -translate-y-1/2 cursor-pointer text-ink-muted hover:text-ink"
             >
-              {revealed ? <EyeOff className="size-[15px]" /> : <Eye className="size-[15px]" />}
+              {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
             </button>
           )
         }

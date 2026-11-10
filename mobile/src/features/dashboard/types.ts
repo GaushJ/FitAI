@@ -1,21 +1,7 @@
 import type { StoredBodyProfile } from "@/features/settings/types";
+import type { Ingredient, Macros } from "@/types/nutrition";
 
-export interface Macros {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-}
-
-export interface Ingredient {
-  name: string;
-  brand: string | null;
-  weight_g: number;
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fat_per_100g: number;
-}
+export type { Ingredient, Macros } from "@/types/nutrition";
 
 export interface MealLog {
   id: number;
@@ -29,6 +15,7 @@ export interface DashboardUser extends StoredBodyProfile {
   name: string;
   username: string;
   current_streak: number;
+  is_pro: boolean;
   target_calories: number;
   target_protein: number;
   target_carbs: number;

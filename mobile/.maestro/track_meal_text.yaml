@@ -5,9 +5,9 @@
 ---
 - runFlow: login.yaml
 
-- tapOn: "Log a meal… e.g. 2 eggs and toast"
+- tapOn: "Type what you ate… e.g. '200ml Nandini milk and 2 eggs'"
 - inputText: "2 eggs and toast"
-- tapOn: "Log meal"
+- tapOn: "Log this meal"
 
-- assertVisible: "Meal logged!"
+- assertVisible: "Meal logged.*"
 - assertVisible: "2 eggs and toast"

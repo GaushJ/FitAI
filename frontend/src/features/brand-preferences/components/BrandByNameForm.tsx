@@ -25,39 +25,38 @@ export function BrandByNameForm({ identity, onIdentityChange, onSaved, onNotice 
   const canFetch = Boolean(identity.ingredient.trim() && identity.brand.trim());
 
   return (
-    <form onSubmit={form.submit} className="space-y-4">
-      <p className="text-xs leading-relaxed text-slate-400">
+    <form onSubmit={form.submit} className="space-y-5">
+      <p className="text-sm text-ink-muted">
         Enter the ingredient and brand — macros are fetched automatically and can be edited before saving.
       </p>
 
-      <BrandIdentityFields
-        value={identity}
-        onChange={(next) => {
-          onIdentityChange(next);
-          form.discardFetchedMacros();
-        }}
-      />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+        <BrandIdentityFields
+          value={identity}
+          onChange={(next) => {
+            onIdentityChange(next);
+            form.discardFetchedMacros();
+          }}
+        />
+        <Button
+          variant="outline"
+          className="lg:w-40 lg:py-[11px]"
+          icon={<Sparkles className="text-primary" />}
+          loading={form.fetching}
+          loadingText="Fetching..."
+          disabled={!canFetch}
+          onClick={form.fetchMacros}
+        >
+          Fetch
+        </Button>
+      </div>
 
-      <Button
-        variant="secondary"
-        size="sm"
-        fullWidth
-        className="font-semibold"
-        icon={<Sparkles className="text-accent" />}
-        loading={form.fetching}
-        loadingText="Fetching macros..."
-        disabled={!canFetch}
-        onClick={form.fetchMacros}
-      >
-        Fetch Macros
-      </Button>
-
-      {form.fetchMessage && <p className="-mt-1 text-[10px] text-slate-500">{form.fetchMessage}</p>}
+      {form.fetchMessage && <p className="font-mono text-xs text-ink-muted">{form.fetchMessage}</p>}
 
       {form.macros && (
-        <div className="space-y-2 rounded-xl border border-accent/20 bg-slate-950 p-3">
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-accent">
-            Per 100g — edit if needed
+        <div className="border border-line bg-surface-low p-4">
+          <p className="mb-3 flex justify-between font-mono text-xs uppercase tracking-widest text-ink">
+            {"// "}Nutrition per 100g <span className="text-ink-muted">Editable</span>
           </p>
           <MacroFieldGrid
             values={form.macros}
@@ -66,9 +65,11 @@ export function BrandByNameForm({ identity, onIdentityChange, onSaved, onNotice 
         </div>
       )}
 
-      <Button type="submit" fullWidth icon={<Plus />} loading={form.saving} loadingText="Saving...">
-        Save Preference
-      </Button>
+      <div className="flex justify-end">
+        <Button type="submit" size="lg" icon={<Plus />} loading={form.saving} loadingText="Saving...">
+          Save preference
+        </Button>
+      </div>
     </form>
   );
 }

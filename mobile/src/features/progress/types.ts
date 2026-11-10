@@ -9,6 +9,8 @@ export interface DaySummary {
   status: "met" | "over" | "under" | "minimal" | "empty";
 }
 
+export type DayStatus = DaySummary["status"];
+
 export interface ProgressStats {
   current_streak: number;
   best_streak: number;

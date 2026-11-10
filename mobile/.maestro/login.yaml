@@ -9,7 +9,7 @@
 ---
 - launchApp:
     clearState: true
-- tapOn: "your_username"
+- tapOn: "your_handle"
 - inputText: "maestro_fixed"
 - tapOn: "••••••••"
 - inputText: "Maestro1234"
@@ -19,7 +19,7 @@
 # the form. If Maestro reports this ambiguous on your install, replace with
 # a testID-based selector instead.
 - tapOn:
-    text: "Sign In"
+    text: "Sign in"
     index: 1
 
-- assertVisible: "Log a meal… e.g. 2 eggs and toast"
+- assertVisible: "Macro dashboard"

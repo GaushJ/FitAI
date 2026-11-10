@@ -3,7 +3,7 @@ for that and db/crud/ for query helpers."""
 import datetime
 from typing import Optional, List
 
-from sqlalchemy import String, Integer, Float, Date, DateTime, JSON, ForeignKey
+from sqlalchemy import String, Integer, Float, Boolean, Date, DateTime, JSON, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -37,6 +37,10 @@ class User(Base):
 
     current_streak: Mapped[int] = mapped_column(Integer, default=0)
     last_active_date: Mapped[Optional[datetime.date]] = mapped_column(Date, nullable=True)
+
+    # Set by backend/routers/payments.py's payment.captured handler once a
+    # "pro_unlock" purchase is confirmed via paykit's webhook (see migrations/0005).
+    is_pro: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     food_logs: Mapped[List["DailyFoodLog"]] = relationship("DailyFoodLog", back_populates="user", cascade="all, delete-orphan")
     frequent_meals: Mapped[List["FrequentMeal"]] = relationship("FrequentMeal", back_populates="user", cascade="all, delete-orphan")

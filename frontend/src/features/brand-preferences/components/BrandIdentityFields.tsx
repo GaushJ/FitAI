@@ -9,21 +9,21 @@ interface BrandIdentityFieldsProps {
 
 export function BrandIdentityFields({ value, onChange }: BrandIdentityFieldsProps) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      <FormField label="Ingredient">
+    <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">
+      <FormField label={<>Ingredient <span className="text-primary">*</span></>}>
         <Input
           type="text"
           required
-          placeholder="e.g. milk"
+          placeholder="e.g. greek yogurt"
           value={value.ingredient}
           onChange={(e) => onChange({ ...value, ingredient: e.target.value })}
         />
       </FormField>
-      <FormField label="Brand">
+      <FormField label={<>Brand <span className="text-primary">*</span></>}>
         <Input
           type="text"
           required
-          placeholder="e.g. Nandini toned"
+          placeholder="e.g. Epigamia No Added Sugar"
           value={value.brand}
           onChange={(e) => onChange({ ...value, brand: e.target.value })}
         />

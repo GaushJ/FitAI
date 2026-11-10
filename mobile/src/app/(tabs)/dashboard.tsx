@@ -1,292 +1,149 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { ScrollView, Text, View, Pressable, Alert } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Bookmark, Dumbbell, Flame, KeyRound, Settings } from "lucide-react-native";
-import type { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { Banner, LoadingSpinner } from "@/components/ui";
-import { deleteMeal, getDashboard, getFrequentMeals, logFrequentMeal } from "@/features/dashboard/api";
+import { useState } from "react";
+import { View } from "react-native";
+import { useRouter } from "expo-router";
+import { SlidersHorizontal } from "lucide-react-native";
+import { AppScreen } from "@/components/layout/AppScreen";
+import { Alert, Button, PageHeader, Spinner } from "@/components/ui";
+import { useFeedback } from "@/hooks/useFeedback";
+import { useRemoteList } from "@/hooks/useRemoteList";
+import { fetchBrandPreferences } from "@/features/brandPreferences/api";
 import {
-  MacroProgress,
+  BrandPreferencesCard,
+  FrequentMealsSection,
+  IngredientEditModal,
+  MacroSummary,
   MealComposer,
-  FrequentMealsRow,
-  TodayLogList,
-  IngredientEditorSheet,
-  PortionEditorSheet,
+  TodayMeals,
   type IngredientEditTarget,
 } from "@/features/dashboard/components";
-import type {
-  DashboardResponse,
-  FrequentMeal,
-  Ingredient,
-  MealLog,
-  QuickLogResponse,
-  TrackMealResponse,
-} from "@/features/dashboard/types";
-import { SettingsSheet } from "@/features/settings/components";
-import { BrandPreferencesSheet } from "@/features/brandPreferences/components";
-import { ApiKeysSheet } from "@/features/apiKeys/components";
-import { deleteSavedMeal, getSavedMeals, logSavedMeal } from "@/features/savedMeals/api";
-import { SavedMealsRow, SavedMealEditorSheet, type SavedMealEditorTarget } from "@/features/savedMeals/components";
-import type { LogSavedMealResponse, SavedMeal } from "@/features/savedMeals/types";
+import { useDashboardData, useDeleteMeal, useExpandedMeals, useFrequentMeals } from "@/features/dashboard/hooks/useDashboardHooks";
+import { UpgradeToProButton } from "@/features/payments/components/UpgradeToProButton";
+import { useProfile } from "@/features/profile/ProfileProvider";
+import { SavedMealEditorModal, SavedMealsSection } from "@/features/savedMeals/components";
+import { blankDraft, draftFromLoggedMeal, draftFromSavedMeal } from "@/features/savedMeals/drafts";
+import { useSavedMeals } from "@/features/savedMeals/hooks/useSavedMeals";
+import type { SavedMealDraft } from "@/features/savedMeals/types";
 
+const todayLabel = () => new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
+
+/** Same sections, order and copy as web's DashboardScreen at phone width. */
 export default function DashboardScreen() {
-  const settingsSheetRef = useRef<BottomSheetModal>(null);
-  const brandPreferencesSheetRef = useRef<BottomSheetModal>(null);
-  const apiKeysSheetRef = useRef<BottomSheetModal>(null);
-  const ingredientSheetRef = useRef<BottomSheetModal>(null);
-  const portionSheetRef = useRef<BottomSheetModal>(null);
-  const savedMealSheetRef = useRef<BottomSheetModal>(null);
+  const router = useRouter();
+  const feedback = useFeedback();
+  const { notifier } = feedback;
+  const account = useProfile();
 
-  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
-  const [frequentMeals, setFrequentMeals] = useState<FrequentMeal[]>([]);
-  const [savedMeals, setSavedMeals] = useState<SavedMeal[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const [loggingId, setLoggingId] = useState<number | null>(null);
-  const [savedLoggingId, setSavedLoggingId] = useState<number | null>(null);
-  const [editingIngredient, setEditingIngredient] = useState<IngredientEditTarget | null>(null);
-  const [portionMeal, setPortionMeal] = useState<FrequentMeal | null>(null);
-  const [savedMealTarget, setSavedMealTarget] = useState<SavedMealEditorTarget | null>(null);
+  const dashboard = useDashboardData();
+  const brands = useRemoteList(fetchBrandPreferences);
+  const expanded = useExpandedMeals();
 
-  const loadDashboard = useCallback(async () => {
-    try {
-      const [dashboardRes, frequentRes, savedRes] = await Promise.all([
-        getDashboard(),
-        getFrequentMeals(),
-        getSavedMeals(),
-      ]);
-      setDashboard(dashboardRes);
-      setFrequentMeals(frequentRes);
-      setSavedMeals(savedRes);
-      setError("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to connect to the backend.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadDashboard();
-  }, [loadDashboard]);
-
-  const handleLogged = async (result: TrackMealResponse) => {
-    setSuccessMessage(`Meal logged! ${Math.round(result.macros.calories)} kcal tracked.`);
-    if (result.warning) setError(result.warning);
-    await loadDashboard();
+  // Logging or deleting can change the streak shown in the header.
+  const refreshAll = async () => {
+    await dashboard.refresh();
+    void account.refresh();
   };
-
-  const handleQuickLog = async (meal: FrequentMeal) => {
-    setLoggingId(meal.id);
-    setError("");
-    try {
-      const result = await logFrequentMeal(meal.id);
-      setSuccessMessage(`Logged "${result.display_name}" — ${Math.round(result.macros.calories)} kcal`);
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to quick-log meal.");
-    } finally {
-      setLoggingId(null);
-    }
+  const frequent = useFrequentMeals({ notify: notifier, onLogged: refreshAll });
+  const refreshAfterLog = async () => {
+    await refreshAll();
+    void frequent.refresh();
   };
+  const saved = useSavedMeals({ notify: notifier, onLogged: refreshAfterLog });
+  const deletion = useDeleteMeal(notifier, refreshAll);
 
-  const handleAdjustPortions = (meal: FrequentMeal) => {
-    setPortionMeal(meal);
-    portionSheetRef.current?.present();
-  };
+  const [mealDraft, setMealDraft] = useState<SavedMealDraft | null>(null);
+  const [ingredientEdit, setIngredientEdit] = useState<IngredientEditTarget | null>(null);
 
-  const handlePortionLogged = async (result: QuickLogResponse) => {
-    setSuccessMessage(`Logged "${result.display_name}" — ${Math.round(result.macros.calories)} kcal`);
-    await loadDashboard();
-  };
-
-  const handleEditIngredient = (mealId: number, index: number, ingredient: Ingredient) => {
-    setEditingIngredient({ mealId, index, ingredient });
-    ingredientSheetRef.current?.present();
-  };
-
-  const handleIngredientSaved = async () => {
-    setSuccessMessage("Ingredient updated.");
-    await loadDashboard();
-  };
-
-  const handleCreateSavedMeal = () => {
-    setSavedMealTarget({ mode: "new", meal: null });
-    savedMealSheetRef.current?.present();
-  };
-
-  const handleEditSavedMeal = (meal: SavedMeal) => {
-    setSavedMealTarget({ mode: "edit", meal });
-    savedMealSheetRef.current?.present();
-  };
-
-  const handleSavedMealSaved = async () => {
-    await loadDashboard();
-  };
-
-  const handleSavedMealLogged = async (result: LogSavedMealResponse) => {
-    setSuccessMessage(`Logged "${result.name}" — ${Math.round(result.macros.calories)} kcal`);
-    await loadDashboard();
-  };
-
-  const handleLogSavedMeal = async (meal: SavedMeal) => {
-    setSavedLoggingId(meal.id);
-    setError("");
-    try {
-      const result = await logSavedMeal(meal.id);
-      setSuccessMessage(`Logged "${result.name}" — ${Math.round(result.macros.calories)} kcal`);
-      await loadDashboard();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to log meal.");
-    } finally {
-      setSavedLoggingId(null);
-    }
-  };
-
-  const handleDeleteMeal = (meal: MealLog) => {
-    Alert.alert("Delete meal?", `"${meal.raw_transcript}" will be removed permanently.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteMeal(meal.id);
-            await loadDashboard();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete meal.");
-          }
-        },
-      },
-    ]);
-  };
-
-  const handleDeleteSavedMeal = (meal: SavedMeal) => {
-    Alert.alert("Delete saved meal?", `"${meal.name}" will be removed permanently.`, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteSavedMeal(meal.id);
-            setSavedMeals((prev) => prev.filter((m) => m.id !== meal.id));
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "Failed to delete meal.");
-          }
-        },
-      },
-    ]);
-  };
+  const openSettings = () => router.navigate("/(tabs)/settings");
+  const openBrands = () => router.navigate("/(tabs)/brands");
 
   return (
-    <SafeAreaView edges={["top"]} className="flex-1 bg-bg">
-      <View className="flex-row items-center justify-between border-b border-border-subtle px-4 py-3">
-        <View className="flex-row items-center gap-2">
-          <Dumbbell size={18} color="#C9F24D" strokeWidth={1.8} />
-          <Text className="font-display text-[15px] text-text-primary">GetFitbro</Text>
-        </View>
-        <View className="flex-row items-center gap-3">
-          <View className="flex-row items-center gap-1 rounded-full border border-macro-calories/20 bg-macro-calories/10 px-2.5 py-1">
-            <Flame size={11} color="#fb923c" fill="#fb923c" />
-            <Text className="font-mono text-xs font-bold text-macro-calories">{dashboard?.user.current_streak ?? 0}</Text>
+    <AppScreen>
+      <PageHeader
+        eyebrow={`Today · ${todayLabel()}`}
+        title="Macro dashboard"
+        actions={
+          <>
+            <Button variant="outline" size="sm" icon={SlidersHorizontal} onPress={openSettings}>
+              Adjust targets
+            </Button>
+            {!dashboard.profile.is_pro ? <UpgradeToProButton /> : null}
+          </>
+        }
+      />
+
+      <View className="gap-8">
+        {dashboard.connectionError || feedback.error || feedback.success ? (
+          <View className="gap-3">
+            {dashboard.connectionError ? (
+              <Alert tone="error" size="lg">
+                {dashboard.connectionError}
+              </Alert>
+            ) : null}
+            {feedback.error ? (
+              <Alert tone="error" size="lg" onDismiss={feedback.dismissError}>
+                {feedback.error}
+              </Alert>
+            ) : null}
+            {feedback.success ? (
+              <Alert tone="success" size="lg" onDismiss={feedback.dismissSuccess}>
+                {feedback.success}
+              </Alert>
+            ) : null}
           </View>
-          {dashboard ? (
-            <Pressable
-              onPress={() => apiKeysSheetRef.current?.present()}
-              accessibilityRole="button"
-              accessibilityLabel="API Keys"
-            >
-              <KeyRound size={18} color="#8E9085" />
-            </Pressable>
-          ) : null}
-          {dashboard ? (
-            <Pressable
-              onPress={() => brandPreferencesSheetRef.current?.present()}
-              accessibilityRole="button"
-              accessibilityLabel="Brand Preferences"
-            >
-              <Bookmark size={18} color="#8E9085" />
-            </Pressable>
-          ) : null}
-          {dashboard ? (
-            <Pressable
-              onPress={() => settingsSheetRef.current?.present()}
-              accessibilityRole="button"
-              accessibilityLabel="Settings"
-            >
-              <Settings size={18} color="#8E9085" />
-            </Pressable>
-          ) : null}
-        </View>
+        ) : null}
+
+        {dashboard.loading ? (
+          <Spinner />
+        ) : (
+          <MacroSummary totals={dashboard.totals} profile={dashboard.profile} onAdjustTargets={openSettings} />
+        )}
+
+        <MealComposer notify={notifier} onMealLogged={refreshAfterLog} onOpenBrandPreferences={openBrands} />
+        <TodayMeals
+          meals={dashboard.meals}
+          totals={dashboard.totals}
+          loading={dashboard.loading}
+          expandedIds={expanded.expandedIds}
+          deletingId={deletion.deletingId}
+          onToggle={expanded.toggle}
+          onDelete={deletion.remove}
+          onSaveAsMeal={(meal) => setMealDraft(draftFromLoggedMeal(meal))}
+          onEditIngredient={setIngredientEdit}
+        />
+
+        <FrequentMealsSection frequent={frequent} />
+        <SavedMealsSection
+          meals={saved.meals}
+          loggingId={saved.loggingId}
+          onNew={() => setMealDraft(blankDraft())}
+          onLog={saved.logAsSaved}
+          onEdit={(meal) => setMealDraft(draftFromSavedMeal(meal))}
+          onRemove={saved.remove}
+        />
+        <BrandPreferencesCard count={brands.items.length} onOpen={openBrands} />
       </View>
 
-      {loading ? (
-        <LoadingSpinner />
-      ) : (
-        <ScrollView contentContainerClassName="gap-4 p-4" contentInsetAdjustmentBehavior="automatic">
-          <MealComposer onLogged={handleLogged} />
-
-          {error ? <Banner variant="error" message={error} /> : null}
-          {successMessage ? <Banner variant="success" message={successMessage} /> : null}
-
-          {dashboard ? (
-            <MacroProgress
-              totals={dashboard.totals}
-              targets={{
-                calories: dashboard.user.target_calories,
-                protein: dashboard.user.target_protein,
-                carbs: dashboard.user.target_carbs,
-                fat: dashboard.user.target_fat,
-              }}
-            />
-          ) : null}
-
-          <FrequentMealsRow
-            meals={frequentMeals}
-            onLog={handleQuickLog}
-            onAdjustPortions={handleAdjustPortions}
-            loggingId={loggingId}
-          />
-
-          <SavedMealsRow
-            meals={savedMeals}
-            onLog={handleLogSavedMeal}
-            onEdit={handleEditSavedMeal}
-            onDelete={handleDeleteSavedMeal}
-            onCreateNew={handleCreateSavedMeal}
-            loggingId={savedLoggingId}
-          />
-
-          {dashboard ? (
-            <TodayLogList meals={dashboard.meals} onEditIngredient={handleEditIngredient} onDeleteMeal={handleDeleteMeal} />
-          ) : null}
-        </ScrollView>
-      )}
-
-      {dashboard ? (
-        <SettingsSheet
-          ref={settingsSheetRef}
-          // Stable reference: the form only re-syncs when the dashboard actually reloads the user.
-          initialValues={dashboard.user}
-          onSaved={(updated) => {
-            setDashboard((prev) => (prev ? { ...prev, user: { ...prev.user, ...updated } } : prev));
-            setSuccessMessage("Targets updated!");
+      {ingredientEdit ? (
+        <IngredientEditModal
+          target={ingredientEdit}
+          onClose={() => setIngredientEdit(null)}
+          onSaved={async () => {
+            setIngredientEdit(null);
+            notifier.success("Ingredient updated.");
+            await dashboard.refresh();
           }}
         />
       ) : null}
 
-      <ApiKeysSheet ref={apiKeysSheetRef} />
-      <BrandPreferencesSheet ref={brandPreferencesSheetRef} />
-      <IngredientEditorSheet ref={ingredientSheetRef} target={editingIngredient} onSaved={handleIngredientSaved} />
-      <PortionEditorSheet ref={portionSheetRef} meal={portionMeal} onLogged={handlePortionLogged} />
-      <SavedMealEditorSheet
-        ref={savedMealSheetRef}
-        target={savedMealTarget}
-        onSaved={handleSavedMealSaved}
-        onLogged={handleSavedMealLogged}
-      />
-    </SafeAreaView>
+      {mealDraft ? (
+        <SavedMealEditorModal
+          draft={mealDraft}
+          notify={notifier}
+          onClose={() => setMealDraft(null)}
+          onTemplateSaved={saved.refresh}
+          onLogged={refreshAfterLog}
+        />
+      ) : null}
+    </AppScreen>
   );
 }

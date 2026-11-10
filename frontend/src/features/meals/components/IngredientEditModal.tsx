@@ -30,38 +30,27 @@ export function IngredientEditModal({ target, onClose, onSaved }: IngredientEdit
 
   return (
     <Modal
-      compact
       size="sm"
-      title="Edit Ingredient"
-      icon={<Pencil className="text-accent" />}
+      title="Edit ingredient"
+      icon={<Pencil />}
       subtitle={<span className="capitalize">{target.ingredient.name}</span>}
       onClose={onClose}
-      bodyClassName="space-y-3"
+      bodyClassName="space-y-4"
     >
-      <FormField label="Weight (g)" variant="caps" labelClassName="text-slate-400">
-        <Input
-          type="number"
-          min={0}
-          value={form.weight_g}
-          onChange={(e) => setField("weight_g", e.target.value)}
-        />
+      <FormField label="Weight (g)">
+        <Input type="number" min={0} value={form.weight_g} onChange={(e) => setField("weight_g", e.target.value)} />
       </FormField>
 
       <div className="grid grid-cols-2 gap-3">
         {MACRO_FIELDS.map(({ key, label, tone }) => (
           <FormField key={key} label={label} labelClassName={tone}>
-            <Input
-              type="number"
-              min={0}
-              value={form[key]}
-              onChange={(e) => setField(key, e.target.value)}
-            />
+            <Input type="number" min={0} value={form[key]} onChange={(e) => setField(key, e.target.value)} />
           </FormField>
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-        <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-600">
+      <div className="border border-line bg-surface-low p-3">
+        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-muted">
           Resulting macros for this ingredient
         </p>
         <MacroInline macros={resulting} />
@@ -69,18 +58,12 @@ export function IngredientEditModal({ target, onClose, onSaved }: IngredientEdit
 
       {notice && <InlineNotice notice={notice} />}
 
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" className="flex-1" onClick={onClose}>
+      <div className="flex gap-3 pt-1">
+        <Button variant="outline" className="flex-1" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          className="flex-1"
-          onClick={save}
-          loading={saving}
-          loadingText="Saving..."
-          icon={<Check />}
-        >
-          Save Changes
+        <Button className="flex-1" onClick={save} loading={saving} loadingText="Saving..." icon={<Check />}>
+          Save
         </Button>
       </div>
     </Modal>

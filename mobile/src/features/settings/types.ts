@@ -23,7 +23,7 @@ export interface BodyProfile {
 /** The stored profile: every body field may be missing until the user fills it in. */
 export type StoredBodyProfile = Partial<{ [K in keyof BodyProfile]: BodyProfile[K] | null }>;
 
-/** What the settings sheet reads and what the API echoes back after a save. */
+/** What the Settings tab reads and what the API echoes back after a save. */
 export type UserSettings = UserTargets & StoredBodyProfile;
 
 /** What POST /api/user accepts: targets plus any body fields the user has filled in. */

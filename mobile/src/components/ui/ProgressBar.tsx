@@ -1,23 +1,24 @@
 import { View } from "react-native";
 
+// Mirrors frontend/src/components/atoms/ProgressBar.tsx.
 interface ProgressBarProps {
-  /** 0-100+ (values over 100 are clamped visually but the color can still reflect overage via `color`). */
+  /** 0–150; values over 100 are clipped to a full bar. */
   percent: number;
-  /** Tailwind color class for the fill, e.g. "bg-macro-protein" or "bg-macro-calories". */
-  color: string;
-  /** Track height in the `h-*` scale — defaults to the thin macro-bar size. */
-  height?: "h-1.5" | "h-2.5" | "h-3";
+  fillClassName?: string;
+  label?: string;
+  className?: string;
 }
 
-export function ProgressBar({ percent, color, height = "h-1.5" }: ProgressBarProps) {
-  const clamped = Math.max(0, Math.min(100, percent));
+export function ProgressBar({ percent, fillClassName = "bg-ink", label, className = "" }: ProgressBarProps) {
+  const width = Math.max(0, Math.min(percent, 100));
   return (
-    <View className={`w-full overflow-hidden rounded-full border border-border bg-surface-inset ${height}`}>
-      <View
-        testID="progress-bar-fill"
-        className={`h-full rounded-full ${color}`}
-        style={{ width: `${clamped}%` }}
-      />
+    <View
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      accessibilityValue={{ min: 0, max: 100, now: percent }}
+      className={`h-2 w-full overflow-hidden bg-surface-highest ${className}`}
+    >
+      <View testID="progress-bar-fill" className={`h-full ${fillClassName}`} style={{ width: `${width}%` }} />
     </View>
   );
 }

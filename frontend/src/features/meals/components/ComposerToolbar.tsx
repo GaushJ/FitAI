@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { ArrowUp, Camera, Mic, Square } from "lucide-react";
+import { Camera, Mic, SendHorizontal, Square } from "lucide-react";
 import { Spinner } from "@/components/atoms/Spinner";
 import { cn } from "@/lib/cn";
 import { formatDuration } from "@/lib/format";
@@ -9,9 +9,9 @@ import { formatDuration } from "@/lib/format";
 type ToolbarButtonTone = "neutral" | "recording" | "primary";
 
 const TONES: Record<ToolbarButtonTone, string> = {
-  neutral: "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-accent",
-  recording: "bg-red-600 shadow-[0_0_16px_rgba(239,68,68,0.5)] hover:bg-red-500",
-  primary: "bg-accent hover:bg-accent-light",
+  neutral: "border border-line-strong bg-card text-ink-muted hover:border-ink hover:text-ink",
+  recording: "bg-primary text-white animate-pulse",
+  primary: "bg-primary text-white shadow-hard-primary press-3d hover:bg-primary-bright",
 };
 
 interface ToolbarButtonProps {
@@ -32,7 +32,7 @@ function ToolbarButton({ label, tone, type = "button", disabled, onClick, childr
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-all disabled:cursor-not-allowed disabled:opacity-40",
+        "flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xs transition disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-[18px]",
         TONES[tone],
       )}
     >
@@ -51,7 +51,7 @@ interface ComposerToolbarProps {
   onToggleRecording: () => void;
 }
 
-/** Camera, mic and send buttons docked in the corner of the composer, chat-style. */
+/** Camera, mic and send buttons docked in the bottom-right of the composer. */
 export function ComposerToolbar({
   isRecording,
   isProcessing,
@@ -66,8 +66,8 @@ export function ComposerToolbar({
   return (
     <div className="absolute right-3 bottom-3 flex items-center gap-2">
       {isRecording && (
-        <span className="mr-1 flex items-center gap-1.5 font-mono text-[10px] font-semibold text-red-400">
-          <span className="h-1.5 w-1.5 animate-ping rounded-full bg-red-500" />
+        <span className="mr-1 flex items-center gap-1.5 font-mono text-xs font-medium text-primary">
+          <span className="size-1.5 animate-ping bg-primary" />
           {formatDuration(elapsedSeconds)}
         </span>
       )}
@@ -91,7 +91,7 @@ export function ComposerToolbar({
         disabled={isRecording || isProcessing || isScanning}
         onClick={() => fileInputRef.current?.click()}
       >
-        {isScanning ? <Spinner /> : <Camera className="size-4" />}
+        {isScanning ? <Spinner /> : <Camera />}
       </ToolbarButton>
 
       <ToolbarButton
@@ -100,11 +100,11 @@ export function ComposerToolbar({
         disabled={isProcessing}
         onClick={onToggleRecording}
       >
-        {isRecording ? <Square className="size-3.5 fill-white text-white" /> : <Mic className="size-4" />}
+        {isRecording ? <Square className="fill-white" /> : <Mic />}
       </ToolbarButton>
 
       <ToolbarButton label="Log this meal" tone="primary" type="submit" disabled={!canSubmit}>
-        {isProcessing ? <Spinner className="size-4 text-ink" /> : <ArrowUp className="size-4 text-ink" />}
+        {isProcessing ? <Spinner /> : <SendHorizontal />}
       </ToolbarButton>
     </div>
   );

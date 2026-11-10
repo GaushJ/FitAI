@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # Load environmental variables from .env
 load_dotenv()
 
+from paykit.integrations.fastapi import paykit_lifespan
+
 from core.config import CORS_ALLOW_ORIGINS
 from db.session import init_db
 from routers import (
@@ -28,18 +30,22 @@ from routers import (
     frequent_meals,
     ingredients,
     keys,
+    payments,
     progress,
     saved_meals,
     users,
 )
 
+_paykit_lifespan = paykit_lifespan(payments.payment_service)
 
-# ── App lifespan (DB init + temp dir) ──────────────────────────────────────────
+
+# ── App lifespan (DB init + temp dir + paykit's HTTP client/DB engine) ─────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
     os.makedirs("temp_audio", exist_ok=True)
-    yield
+    async with _paykit_lifespan(app):
+        yield
     if os.path.exists("temp_audio"):
         shutil.rmtree("temp_audio")
 
@@ -70,6 +76,7 @@ app.include_router(frequent_meals.router)
 app.include_router(saved_meals.router)
 app.include_router(ingredients.router)
 app.include_router(brand_preferences.router)
+app.include_router(payments.router)
 
 
 if __name__ == "__main__":

@@ -12,8 +12,8 @@ interface AddIngredientFormProps {
 /** Name / brand / grams row; adding resolves the ingredient's macros server-side. */
 export function AddIngredientForm({ value, resolving, onChange, onAdd }: AddIngredientFormProps) {
   return (
-    <div className="space-y-2 rounded-xl border border-dashed border-slate-800 bg-slate-950/40 p-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Add ingredient</p>
+    <div className="space-y-2 border border-dashed border-line-strong bg-surface-low p-3">
+      <p className="font-mono text-[11px] font-medium uppercase tracking-widest text-ink-muted">Add ingredient</p>
       <div className="flex gap-2">
         <Input
           size="sm"
@@ -25,7 +25,7 @@ export function AddIngredientForm({ value, resolving, onChange, onAdd }: AddIngr
         />
         <Input
           size="sm"
-          className="w-28"
+          className="w-36"
           placeholder="Brand (optional)"
           aria-label="Ingredient brand"
           value={value.brand}
@@ -38,17 +38,17 @@ export function AddIngredientForm({ value, resolving, onChange, onAdd }: AddIngr
             type="number"
             min={1}
             size="sm"
-            className="w-20 text-right"
+            className="w-20 text-right font-mono"
             aria-label="Ingredient grams"
             value={value.weight}
             onChange={(e) => onChange({ weight: Number(e.target.value) })}
           />
-          <span className="text-[10px] text-slate-500">g</span>
+          <span className="font-mono text-xs text-ink-muted">g</span>
         </div>
         <Button
-          variant="secondary"
+          variant="dark"
           size="sm"
-          className="flex-1 font-semibold"
+          className="flex-1"
           icon={<Plus />}
           loading={resolving}
           loadingText="Resolving..."

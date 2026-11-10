@@ -16,3 +16,6 @@ bcrypt>=4.0.0
 openpyxl>=3.1.0
 asyncpg>=0.29.0
 psycopg2-binary>=2.9.0
+
+# Payments (one-time "pro" unlock via Razorpay) — embedded per routers/payments.py.
+openpaykit[fastapi,sql] @ git+https://github.com/GaushJ/paykit.git@b534149cbb5f84108e96ec9dc5392d2b743e5561

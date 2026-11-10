@@ -31,5 +31,5 @@ export function useApiKeys() {
     setStored(loadLlmKeys());
   };
 
-  return { keys, missingCount: keys.filter((k) => !k.isSet).length, save, remove };
+  return { keys, save, remove };
 }

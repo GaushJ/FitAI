@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { getErrorMessage } from "@/lib/errors";
 import { calculateTargets, updateUser } from "./api";
 import { bodyDraftFrom, parseBodyDraft, type BodyDraft } from "./bodyProfile";
 import { caloriesFromMacros, scaleMacrosToCalories } from "./macros";
 import type { TargetPlan, UserSettings } from "./types";
+
+// Port of web's useMacroTargetsForm.
 
 export type MacroKey = "protein" | "carbs" | "fat";
 
@@ -14,40 +17,34 @@ export interface TargetsDraft {
   fat: string;
 }
 
-const targetsDraftFrom = (values: UserSettings): TargetsDraft => ({
-  calories: String(values.target_calories),
-  protein: String(values.target_protein),
-  carbs: String(values.target_carbs),
-  fat: String(values.target_fat),
-});
-
 const toGrams = (draft: TargetsDraft) => ({
   protein: Number(draft.protein) || 0,
   carbs: Number(draft.carbs) || 0,
   fat: Number(draft.fat) || 0,
 });
 
-/**
- * State behind the Settings sheet: body stats → suggested targets (server-side formulas),
- * plus manual tweaks that keep calories consistent with the macros.
- */
-export function useTargetsForm(initialValues: UserSettings, onSaved: (updated: UserSettings) => void) {
-  const [name, setName] = useState(initialValues.name);
-  const [body, setBody] = useState<BodyDraft>(() => bodyDraftFrom(initialValues));
-  const [targets, setTargets] = useState<TargetsDraft>(() => targetsDraftFrom(initialValues));
+const draftFromPlan = (plan: TargetPlan): TargetsDraft => ({
+  calories: String(plan.calories),
+  protein: String(plan.protein),
+  carbs: String(plan.carbs),
+  fat: String(plan.fat),
+});
+
+/** Body stats → suggested targets (server-side formulas), plus manual tweaks that keep calories
+ * consistent with the macros. */
+export function useTargetsForm(profile: UserSettings, onSaved: () => Promise<void> | void) {
+  const [name, setName] = useState(profile.name);
+  const [body, setBody] = useState<BodyDraft>(() => bodyDraftFrom(profile));
+  const [targets, setTargets] = useState<TargetsDraft>({
+    calories: String(profile.target_calories),
+    protein: String(profile.target_protein),
+    carbs: String(profile.target_carbs),
+    fat: String(profile.target_fat),
+  });
   const [plan, setPlan] = useState<TargetPlan | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-
-  // Re-sync whenever the sheet is reopened with fresh values from the dashboard.
-  useEffect(() => {
-    setName(initialValues.name);
-    setBody(bodyDraftFrom(initialValues));
-    setTargets(targetsDraftFrom(initialValues));
-    setPlan(null);
-    setError("");
-  }, [initialValues]);
 
   const bodyProfile = parseBodyDraft(body);
 
@@ -69,8 +66,8 @@ export function useTargetsForm(initialValues: UserSettings, onSaved: (updated: U
   const commitCalories = () =>
     setTargets((prev) => {
       const typed = Number(prev.calories);
+      if (!(typed > 0)) return { ...prev, calories: String(caloriesFromMacros(toGrams(prev))) };
       const grams = toGrams(prev);
-      if (!(typed > 0)) return { ...prev, calories: String(caloriesFromMacros(grams)) };
       if (caloriesFromMacros(grams) === 0) return prev; // nothing to scale
       const scaled = scaleMacrosToCalories(grams, typed);
       return {
@@ -88,45 +85,35 @@ export function useTargetsForm(initialValues: UserSettings, onSaved: (updated: U
     try {
       const result = await calculateTargets(bodyProfile);
       setPlan(result);
-      setTargets({
-        calories: String(result.calories),
-        protein: String(result.protein),
-        carbs: String(result.carbs),
-        fat: String(result.fat),
-      });
+      setTargets(draftFromPlan(result));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't calculate targets.");
+      setError(getErrorMessage(err, "Couldn't calculate targets."));
     } finally {
       setCalculating(false);
     }
   };
 
-  /** Resolves to true when saved, so the caller can dismiss the sheet. */
-  const save = async (): Promise<boolean> => {
+  const save = async () => {
     setError("");
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError("Name is required.");
-      return false;
-    }
-    const values = {
-      target_calories: Number(targets.calories),
-      target_protein: Number(targets.protein),
-      target_carbs: Number(targets.carbs),
-      target_fat: Number(targets.fat),
-    };
-    if (Object.values(values).some((v) => Number.isNaN(v) || v < 0)) {
-      setError("Targets must be valid, non-negative numbers.");
-      return false;
+    // Web enforces these with the browser's `required`/`min` validation; React Native has none.
+    if (!name.trim()) return setError("Name is required.");
+    if ([targets.calories, targets.protein, targets.carbs, targets.fat].some((v) => !(Number(v) >= 0) || v.trim() === "")) {
+      return setError("Targets must be valid, non-negative numbers.");
     }
     setSaving(true);
     try {
-      const result = await updateUser({ name: trimmedName, ...values, ...bodyProfile });
-      onSaved(result.user);
-      return true;
+      const grams = toGrams(targets);
+      await updateUser({
+        name: name.trim(),
+        target_calories: Number(targets.calories) || caloriesFromMacros(grams),
+        target_protein: grams.protein,
+        target_carbs: grams.carbs,
+        target_fat: grams.fat,
+        ...bodyProfile,
+      });
+      await onSaved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save settings.");
-      return false;
+      setError(getErrorMessage(err, "Error saving profile."));
     } finally {
       setSaving(false);
     }
@@ -137,7 +124,7 @@ export function useTargetsForm(initialValues: UserSettings, onSaved: (updated: U
     setName,
     body,
     setBodyField,
-    canCalculate: bodyProfile !== null,
+    bodyProfile,
     targets,
     setMacro,
     setCaloriesText,

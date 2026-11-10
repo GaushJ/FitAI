@@ -6,14 +6,14 @@
 ---
 - runFlow: login.yaml
 
-- tapOn: "New saved meal"
-- tapOn: "e.g. Breakfast Omelette"
+- tapOn: "New"
+- tapOn: "e.g. Omelette + Protein Shake"
 - inputText: "Maestro Omelette"
-- tapOn: "Ingredient name"
+- tapOn: "Name (e.g. egg)"
 - inputText: "egg"
 - tapOn: "Add"
 - assertVisible: "egg"
-- tapOn: "Save & Log Now"
+- tapOn: "Log now"
 
 - assertVisible: 'Logged "Maestro Omelette"'
 

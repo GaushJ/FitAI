@@ -34,3 +34,22 @@ jest.mock("expo-image-picker", () => ({
   launchCameraAsync: jest.fn(() => Promise.resolve({ canceled: true, assets: null })),
   launchImageLibraryAsync: jest.fn(() => Promise.resolve({ canceled: true, assets: null })),
 }));
+
+// Components render outside a navigator in tests, so run focus effects like a plain mount effect.
+// (Only useFocusEffect is stubbed: requiring the real module pulls in ESM Jest can't parse.)
+jest.mock("expo-router", () => {
+  const { useEffect } = require("react");
+  return { useFocusEffect: (effect) => useEffect(effect, [effect]) };
+});
+
+jest.mock("expo-file-system", () => ({
+  Paths: { cache: "file:///cache/" },
+  Directory: jest.fn(),
+  File: { downloadFileAsync: jest.fn(() => Promise.resolve({ uri: "file:///cache/brand_preferences.xlsx" })) },
+}));
+
+jest.mock("expo-sharing", () => ({ shareAsync: jest.fn(() => Promise.resolve()) }));
+
+jest.mock("expo-document-picker", () => ({
+  getDocumentAsync: jest.fn(() => Promise.resolve({ canceled: true, assets: null })),
+}));
