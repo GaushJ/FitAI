@@ -1,20 +1,30 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono, Oswald } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Exposed as CSS variables and wired into Tailwind's font tokens in globals.css
+// (`font-sans`, `font-display`, `font-mono`).
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const oswald = Oswald({
+  variable: "--font-oswald",
   subsets: ["latin"],
+  weight: ["500", "600", "700"],
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains",
+  subsets: ["latin"],
+  weight: ["400", "500", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Macronaut | AI Meal & Macro Tracker",
-  description: "Track your daily macros, streaks, and calories with agentic AI that resolves brands, portions, and prep — type it or say it.",
+  title: "GetFitBro | Voice, Text & Label Macro Tracking",
+  description:
+    "Type, speak, or scan what you ate. GetFitBro parses the meal, applies your saved brands, and tracks calories, protein, carbs and fat.",
 };
 
 export default function RootLayout({
@@ -25,9 +35,10 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      data-scroll-behavior="smooth"
+      className={`${inter.variable} ${oswald.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="flex min-h-full flex-col">{children}</body>
     </html>
   );
 }

@@ -1,0 +1,10 @@
+# Logs in, then logs out via the Settings tab, and confirms the app lands
+# back on the login screen (AuthContext.logout() + the (tabs) layout's
+# Redirect once `user` goes null).
+---
+- runFlow: login.yaml
+
+- tapOn: "Settings"
+- tapOn: "Sign out"
+
+- assertVisible: "your_handle"

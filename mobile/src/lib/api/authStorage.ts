@@ -1,0 +1,40 @@
+import { secureStorage as storage } from "./secureStorage";
+
+/**
+ * JWT + user persistence — the mobile replacement for the web app's
+ * localStorage (`fitvoice_auth_token`/`fitvoice_auth_user`). Never use
+ * AsyncStorage for these: both are secrets/PII-adjacent.
+ */
+
+const TOKEN_KEY = "getfitbro_auth_token";
+const USER_KEY = "getfitbro_auth_user";
+
+export interface StoredUser {
+  id: number;
+  name: string;
+  username: string;
+}
+
+export async function getToken(): Promise<string | null> {
+  return storage.getItemAsync(TOKEN_KEY);
+}
+
+export async function getUser(): Promise<StoredUser | null> {
+  const raw = await storage.getItemAsync(USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as StoredUser;
+  } catch {
+    return null;
+  }
+}
+
+export async function storeAuth(token: string, user: StoredUser): Promise<void> {
+  await storage.setItemAsync(TOKEN_KEY, token);
+  await storage.setItemAsync(USER_KEY, JSON.stringify(user));
+}
+
+export async function clearAuth(): Promise<void> {
+  await storage.deleteItemAsync(TOKEN_KEY);
+  await storage.deleteItemAsync(USER_KEY);
+}

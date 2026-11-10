@@ -1,0 +1,13 @@
+# Core M2 loop: log a meal by typing it, see it reflected on the dashboard.
+# Needs a real Anthropic (and optionally Tavily) key configured on the
+# backend you're running against, since /api/track-meal resolves macros
+# through the same LLM pipeline as production.
+---
+- runFlow: login.yaml
+
+- tapOn: "Type what you ate… e.g. '200ml Nandini milk and 2 eggs'"
+- inputText: "2 eggs and toast"
+- tapOn: "Log this meal"
+
+- assertVisible: "Meal logged.*"
+- assertVisible: "2 eggs and toast"
