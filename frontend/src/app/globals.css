@@ -1,93 +1,112 @@
 @import "tailwindcss";
 
-/* ── GetFitbro design tokens ────────────────────────────────────────── */
+/* ── GetFitBro design tokens (Stitch "Cross-Platform App Design System") ── */
 @theme inline {
-  --color-slate-950: #0B0C09;
-  --color-slate-900: #16180F;
-  --color-slate-850: #1A1C12;
-  --color-slate-800: #1E2018;
-  --color-slate-700: #2A2D1E;
-  --color-slate-600: #6E7066;
-  --color-slate-500: #8E9085;
-  --color-slate-400: #A2A498;
-  --color-slate-300: #C8CABF;
-  --color-slate-200: #E8EAE0;
-  --color-slate-100: #F4F5EF;
-  --color-slate-50:  #F8F9F4;
+  /* Surfaces, lightest → darkest. `card` sits on `surface`. */
+  --color-card: #ffffff;
+  --color-surface: #fbf9f5;
+  --color-surface-low: #f5f3ef;
+  --color-surface-container: #efeeea;
+  --color-surface-high: #eae8e4;
+  --color-surface-highest: #e4e2de;
 
-  --color-purple-950: #0F1208;
-  --color-purple-900: #131608;
-  --color-purple-800: #1C2110;
-  --color-purple-700: #4A5C10;
-  --color-purple-600: #C9F24D;
-  --color-purple-500: #D4F56A;
-  --color-purple-400: #C9F24D;
-  --color-purple-300: #D4F56A;
-  --color-purple-200: #E2FA8F;
-  --color-purple-100: #F0FDC5;
+  /* Text */
+  --color-ink: #1b1c1a;
+  --color-ink-muted: #5f5e5e;
+  --color-ink-subtle: #8b8a88;
 
-  --color-indigo-900: #0F1208;
-  --color-indigo-800: #1A1E0A;
-  --color-indigo-700: #3A4A0E;
-  --color-indigo-600: #AFDF33;
-  --color-indigo-500: #C9F24D;
-  --color-indigo-400: #C9F24D;
-  --color-indigo-200: #D4F56A;
+  /* Borders */
+  --color-line: #e4e2de;
+  --color-line-strong: #c8c6c5;
 
-  --color-cyan-400: #C9F24D;
-  --color-cyan-200: #D4F56A;
+  /* Brand red */
+  --color-primary: #ba090a;
+  --color-primary-bright: #df2c22;
+  --color-primary-dark: #930003;
+  --color-primary-soft: #ffdad5;
 
-  /* Semantic brand tokens — prefer these over raw hex in components */
-  --color-accent: #C9F24D;
-  --color-accent-light: #D4F56A;
-  --color-ink: #0B0C09;
-  --color-heat: #FF8A4C;
+  /* Status */
+  --color-success: #15803d;
+  --color-success-bright: #22c55e;
+  --color-success-soft: #dcfce7;
+  --color-warning: #b45309;
+  --color-warning-soft: #fef3c7;
+  --color-danger: #ba1a1a;
+  --color-danger-soft: #ffdad6;
 
-  /* Landing-page motion */
-  --animate-fv-up: fv-up 1s cubic-bezier(0.16, 1, 0.3, 1) both;
-  --animate-fv-pulse: fv-pulse 2.2s ease-out infinite;
-  --animate-fv-blink: fv-blink 1s step-end infinite;
-  --animate-fv-float: fv-float 5s ease-in-out infinite;
-  --animate-fv-marquee: fv-marquee 26s linear infinite;
+  /* One colour per macro, used everywhere P / C / F appear */
+  --color-macro-calories: #ba090a;
+  --color-macro-protein: #15803d;
+  --color-macro-carbs: #c2410c;
+  --color-macro-fat: #be123c;
 
-  @keyframes fv-up {
-    from { opacity: 0; transform: translateY(34px); }
-    to { opacity: 1; transform: none; }
-  }
-  @keyframes fv-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 242, 77, 0.45); }
-    70% { box-shadow: 0 0 0 22px rgba(201, 242, 77, 0); }
-  }
-  @keyframes fv-blink {
-    0%, 49% { opacity: 1; }
-    50%, 100% { opacity: 0; }
-  }
-  @keyframes fv-float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
-  }
-  @keyframes fv-marquee {
-    to { transform: translateX(-50%); }
-  }
+  /* Hard offset shadows instead of blurred ones */
+  --shadow-hard-sm: 2px 2px 0 0 #1b1c1a;
+  --shadow-hard: 4px 4px 0 0 #1b1c1a;
+  --shadow-hard-primary: 3px 3px 0 0 #930003;
+
+  --radius-xs: 0.125rem;
 
   /* Family variables are provided by next/font in app/layout.tsx */
-  --font-sans: var(--font-hanken), system-ui, sans-serif;
-  --font-display: var(--font-bricolage), system-ui, sans-serif;
-  --font-mono: var(--font-jetbrains), monospace;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-oswald), "Arial Narrow", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, monospace;
 }
 
-/* ── Base ────────────────────────────────────────────────────────────── */
-html { scroll-behavior: smooth; }
-
-body {
-  background: #0B0C09;
-  color: #F4F5EF;
-  font-family: var(--font-hanken), system-ui, sans-serif;
-  -webkit-font-smoothing: antialiased;
+/* Dotted backdrop behind app pages */
+@utility bg-dots {
+  background-image: radial-gradient(var(--color-surface-highest) 1px, transparent 1px);
+  background-size: 16px 16px;
 }
 
-::selection { background: #C9F24D; color: #0B0C09; }
+/*
+ * 3D press: a button with a hard offset shadow sinks into that shadow on
+ * hover and press. Depth defaults to 3px (shadow-hard-primary); match other
+ * shadows with press-depth-2 (shadow-hard-sm) or press-depth-4 (shadow-hard).
+ */
+@utility press-3d {
+  transition-property: translate, box-shadow, color, background-color, border-color;
+  transition-duration: 120ms;
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 
-::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-track { background: #0B0C09; }
-::-webkit-scrollbar-thumb { background: #2A2D1E; border-radius: 4px; }
+  @media (hover: hover) {
+    &:hover:not(:disabled) {
+      translate: var(--press-depth, 3px) var(--press-depth, 3px);
+      --tw-shadow: 0 0 #0000;
+    }
+  }
+
+  &:active:not(:disabled) {
+    translate: var(--press-depth, 3px) var(--press-depth, 3px);
+    --tw-shadow: 0 0 #0000;
+    transition-duration: 60ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    transition-duration: 0ms;
+  }
+}
+
+@utility press-depth-* {
+  --press-depth: calc(--value(integer) * 1px);
+}
+
+/* ── Base (layered so utilities such as focus:outline-none can override it) ── */
+@layer base {
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--color-surface);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection { background: var(--color-primary); color: #ffffff; }
+
+  :focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: var(--color-surface-low); }
+  ::-webkit-scrollbar-thumb { background: var(--color-line-strong); }
+}

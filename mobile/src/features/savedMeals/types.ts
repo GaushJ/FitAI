@@ -1,40 +1,18 @@
-export interface Macros {
-  calories: number;
-  protein: number;
-  carbs: number;
-  fat: number;
-}
-
-export interface SavedMealIngredient {
-  name: string;
-  brand?: string | null;
-  weight_g: number;
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fat_per_100g: number;
-}
+import type { Ingredient, Macros } from "@/types/nutrition";
 
 export interface SavedMeal {
   id: number;
   name: string;
-  ingredients: SavedMealIngredient[];
+  ingredients: Ingredient[];
   macros: Macros;
   created_at: string;
   updated_at: string;
 }
 
-export interface LogSavedMealResponse {
-  status: string;
-  streak: number;
-  ingredients: SavedMealIngredient[];
-  macros: Macros;
+/** What the editor dialog starts from — a blank meal, a saved one, or a logged one. */
+export interface SavedMealDraft {
+  /** null until the meal has been saved as a template. */
+  id: number | null;
   name: string;
-}
-
-export interface ResolvedIngredientMacros {
-  calories_per_100g: number;
-  protein_per_100g: number;
-  carbs_per_100g: number;
-  fat_per_100g: number;
+  ingredients: Ingredient[];
 }

@@ -21,14 +21,14 @@ export function LoginForm({ onSwitchToSignup }: { onSwitchToSignup: () => void }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
-      <FormField label="Username" labelClassName="text-slate-600">
+    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+      <FormField label="Username">
         <AuthInput
           icon={User}
           type="text"
           required
           autoFocus
-          placeholder="your_username"
+          placeholder="your_handle"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
@@ -50,17 +50,18 @@ export function LoginForm({ onSwitchToSignup }: { onSwitchToSignup: () => void }
         fullWidth
         loading={loading}
         loadingText="Signing in..."
+        className="flex-row-reverse"
         icon={<ArrowRight />}
       >
-        Sign In
+        Sign in
       </Button>
 
-      <p className="text-center text-xs text-slate-500">
+      <p className="border-t border-line pt-5 text-center text-sm text-ink-muted">
         No account?{" "}
         <button
           type="button"
           onClick={onSwitchToSignup}
-          className="cursor-pointer text-xs font-semibold text-accent"
+          className="cursor-pointer font-mono text-xs font-medium uppercase tracking-widest text-ink underline underline-offset-4 hover:text-primary"
         >
           Create one →
         </button>

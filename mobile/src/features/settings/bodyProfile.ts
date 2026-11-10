@@ -13,7 +13,7 @@ interface Option<T extends string> {
   hint: string;
 }
 
-export const SEX_OPTIONS: Array<{ value: Sex; label: string }> = [
+export const SEX_OPTIONS: { value: Sex; label: string }[] = [
   { value: "male", label: "Male" },
   { value: "female", label: "Female" },
 ];

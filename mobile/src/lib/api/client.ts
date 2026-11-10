@@ -31,6 +31,8 @@ export interface RequestOptions {
   form?: FormData;
   /** Extra headers, e.g. X-Anthropic-Key/X-Groq-Key for endpoints that accept client-supplied LLM keys. */
   headers?: Record<string, string>;
+  /** Message used when the server gives no `detail` (same per-endpoint strings as web). */
+  errorMessage?: string;
   /** Skip attaching the Authorization header (auth endpoints only). */
   skipAuth?: boolean;
 }
@@ -41,7 +43,7 @@ export interface RequestOptions {
  * individual features never have to think about session expiry themselves.
  */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", json, form, headers = {}, skipAuth = false } = options;
+  const { method = "GET", json, form, headers = {}, skipAuth = false, errorMessage } = options;
 
   // The user's own LLM keys ride along on every authenticated request, like the
   // web app — the backend only reads them on the endpoints that call an LLM.
@@ -77,10 +79,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     } catch {
       // Non-JSON error body (rare) — leave detail undefined.
     }
-    const message =
-      (detail && typeof detail === "object" && "detail" in detail
-        ? String((detail as { detail: unknown }).detail)
-        : undefined) ?? `Request failed (${res.status})`;
+    const serverDetail =
+      detail && typeof detail === "object" && "detail" in detail ? (detail as { detail: unknown }).detail : undefined;
+    const message = (typeof serverDetail === "string" && serverDetail) || errorMessage || `Request failed (${res.status})`;
     throw new ApiError(res.status, message, detail);
   }
 
@@ -88,27 +89,4 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   // res.json() throwing on an empty stream.
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
-}
-
-/** For binary responses (e.g. GET /api/brand-preferences/export) — returns the Blob and filename. */
-export async function apiRequestBlob(
-  path: string,
-  options: RequestOptions = {}
-): Promise<{ blob: Blob; filename: string | null }> {
-  const token = options.skipAuth ? null : await getToken();
-  const headers: Record<string, string> = { ...options.headers };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
-  const res = await fetch(`${API_BASE_URL}${path}`, { method: options.method ?? "GET", headers });
-
-  if (res.status === 401 && !options.skipAuth) {
-    await clearAuth();
-    onUnauthorized?.();
-    throw new ApiError(401, "Session expired");
-  }
-  if (!res.ok) throw new ApiError(res.status, `Request failed (${res.status})`);
-
-  const disposition = res.headers.get("Content-Disposition") ?? "";
-  const match = disposition.match(/filename="?([^"]+)"?/);
-  return { blob: await res.blob(), filename: match?.[1] ?? null };
 }

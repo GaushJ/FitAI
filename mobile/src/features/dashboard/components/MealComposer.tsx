@@ -1,237 +1,160 @@
-import { useEffect, useRef, useState } from "react";
-import { View, Text, TextInput, Pressable, ActivityIndicator } from "react-native";
-import { Camera, Mic, ArrowRight } from "lucide-react-native";
-import {
-  useAudioRecorder,
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-} from "expo-audio";
+import { useState } from "react";
+import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { Camera, Lightbulb, Mic, SendHorizontal, Square, type LucideIcon } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
-import { BottomSheetModal } from "@gorhom/bottom-sheet";
-import { Banner } from "@/components/ui";
-import { scanNutritionLabels, trackMealWithAudio, trackMealWithText } from "../api";
-import type { ScanLabelImage } from "../api";
-import type { TrackMealResponse } from "../types";
-import { VoiceRecorder } from "./VoiceRecorder";
-import { ScanLabelSheet } from "./ScanLabelSheet";
+import { Card, SectionHeading } from "@/components/ui";
+import type { Notifier } from "@/hooks/useFeedback";
+import { formatDuration } from "@/lib/format";
+import { colors, pressed, shadows } from "@/theme/colors";
+import { useMealComposer } from "../hooks/useMealComposer";
+import { ScanSourceModal } from "./ScanSourceModal";
 
-interface MealComposerProps {
-  onLogged: (result: TrackMealResponse) => void;
+// Port of web's features/meals/components/MealComposer.tsx + ComposerToolbar.tsx.
+type ToolbarTone = "neutral" | "recording" | "primary";
+
+function ToolbarButton({
+  label,
+  tone,
+  disabled,
+  busy,
+  icon: Icon,
+  onPress,
+}: {
+  label: string;
+  tone: ToolbarTone;
+  disabled?: boolean;
+  busy?: boolean;
+  icon: LucideIcon;
+  onPress: () => void;
+}) {
+  const box = tone === "neutral" ? "border border-line-strong bg-card" : "bg-primary";
+  const iconColor = tone === "neutral" ? colors.inkMuted : colors.white;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      disabled={disabled}
+      onPress={onPress}
+      className={`h-10 w-10 items-center justify-center rounded-xs ${box} ${disabled ? "opacity-40" : ""}`}
+      style={({ pressed: isPressed }) => (tone === "primary" ? (isPressed ? pressed(3) : shadows.hardPrimary) : undefined)}
+    >
+      {busy ? (
+        <ActivityIndicator size="small" color={iconColor} />
+      ) : (
+        <Icon size={18} color={iconColor} fill={tone === "recording" ? colors.white : "none"} />
+      )}
+    </Pressable>
+  );
 }
 
-export function MealComposer({ onLogged }: MealComposerProps) {
-  const [text, setText] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [error, setError] = useState("");
-  const [scanMessage, setScanMessage] = useState("");
-  const [seconds, setSeconds] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const scanSheetRef = useRef<BottomSheetModal>(null);
+interface MealComposerProps {
+  notify: Notifier;
+  onMealLogged: () => Promise<void> | void;
+  onOpenBrandPreferences: () => void;
+}
 
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+export function MealComposer({ notify, onMealLogged, onOpenBrandPreferences }: MealComposerProps) {
+  const composer = useMealComposer({ notify, onMealLogged });
+  const { text, isRecording, isProcessing, isScanning } = composer;
+  const [choosingSource, setChoosingSource] = useState(false);
 
-  // Guard against a leaked interval if the screen unmounts mid-recording
-  // (e.g. the user navigates away without tapping stop/cancel).
-  useEffect(() => stopTimer, []);
+  const status = isRecording
+    ? "Listening — tap the square to stop."
+    : isProcessing
+      ? "Transcribing and resolving macros..."
+      : isScanning
+        ? "Reading nutrition label(s)..."
+        : " ";
 
-  function stopTimer() {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-
-  const handleStartRecording = async () => {
-    setError("");
-    try {
-      const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) {
-        setError("Microphone permission is required to record.");
-        return;
-      }
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-      setSeconds(0);
-      setIsRecording(true);
-      timerRef.current = setInterval(() => setSeconds((prev) => prev + 1), 1000);
-    } catch {
-      setError("Failed to access the microphone.");
-    }
-  };
-
-  const handleCancelRecording = async () => {
-    stopTimer();
-    setIsRecording(false);
-    try {
-      await recorder.stop();
-    } catch {
-      // Already stopped/never started successfully — nothing to clean up.
-    }
-  };
-
-  const handleStopAndSubmit = async () => {
-    stopTimer();
-    setIsRecording(false);
-    try {
-      await recorder.stop();
-    } catch {
-      setError("Recording failed.");
-      return;
-    }
-    const uri = recorder.uri;
-    if (!uri) {
-      setError("Recording failed — no audio captured.");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const result = await trackMealWithAudio(uri);
-      onLogged(result);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to log meal.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleSubmitText = async () => {
-    if (!text.trim() || isSubmitting) return;
-    setError("");
-    setIsSubmitting(true);
-    try {
-      const result = await trackMealWithText(text.trim());
-      onLogged(result);
-      setText("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to log meal.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const runScan = async (assets: ImagePicker.ImagePickerAsset[]) => {
-    setError("");
-    setScanMessage("");
-    setIsScanning(true);
-    try {
-      const images: ScanLabelImage[] = assets.map((asset, index) => ({
-        uri: asset.uri,
-        name: asset.fileName ?? `label-${index}.jpg`,
-        type: asset.mimeType ?? "image/jpeg",
-      }));
-      const result = await scanNutritionLabels(images);
-      if (result.saved.length > 0) {
-        const names = result.saved.map((s) => `${s.brand ? s.brand + " " : ""}${s.name}`.trim()).join(", ");
-        const failedNote =
-          result.failed.length > 0
-            ? ` ${result.failed.length} label${result.failed.length !== 1 ? "s" : ""} couldn't be read.`
-            : "";
-        setScanMessage(`Saved macros for ${names}.${failedNote}`);
-      } else {
-        setError("Couldn't read any of the scanned labels. Try clearer, well-lit photos.");
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error while scanning labels.");
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
-  const handleOpenScanSheet = () => {
-    setError("");
-    setScanMessage("");
-    scanSheetRef.current?.present();
-  };
-
-  const handleTakePhoto = async () => {
+  const takePhoto = async () => {
     const { granted } = await ImagePicker.requestCameraPermissionsAsync();
-    if (!granted) {
-      setError("Camera permission is required to scan a label.");
-      return;
-    }
+    if (!granted) return notify.error("Camera permission is required to scan a label.");
     const result = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.7 });
-    if (result.canceled || !result.assets) return;
-    await runScan(result.assets);
+    if (!result.canceled && result.assets) await composer.scan(result.assets);
   };
 
-  const handleChooseLibrary = async () => {
+  const chooseFromLibrary = async () => {
     const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!granted) {
-      setError("Photo library permission is required to scan a label.");
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets) return;
-    await runScan(result.assets);
+    if (!granted) return notify.error("Photo library permission is required to scan a label.");
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsMultipleSelection: true, quality: 0.7 });
+    if (!result.canceled && result.assets) await composer.scan(result.assets);
   };
-
-  if (isRecording) {
-    return <VoiceRecorder seconds={seconds} onCancel={handleCancelRecording} onStop={handleStopAndSubmit} />;
-  }
-
-  const busy = isSubmitting || isScanning;
 
   return (
-    <View className="gap-2">
-      <View className="relative rounded-lg border border-border bg-surface p-4 pb-[62px]">
-        <TextInput
-          multiline
-          numberOfLines={2}
-          value={text}
-          onChangeText={setText}
-          placeholder="Log a meal… e.g. 2 eggs and toast"
-          placeholderTextColor="#6E7066"
-          editable={!busy}
-          className="font-sans text-sm text-text-primary"
-        />
+    <Card tone="raised">
+      <SectionHeading index="02" subtitle="Text · Voice · Label photo">
+        Log a meal
+      </SectionHeading>
 
-        <View className="absolute bottom-3.5 right-3.5 flex-row items-center gap-2">
-          <Pressable
-            onPress={handleOpenScanSheet}
-            disabled={busy}
-            className="h-9 w-9 items-center justify-center rounded-full bg-surface-high"
-            accessibilityRole="button"
-            accessibilityLabel="Scan a nutrition label"
-          >
-            {isScanning ? <ActivityIndicator size="small" color="#F4F5EF" /> : <Camera size={15} color="#8E9085" />}
-          </Pressable>
-          <Pressable
-            onPress={handleStartRecording}
-            disabled={busy}
-            className="h-9 w-9 items-center justify-center rounded-full bg-surface-high"
-            accessibilityRole="button"
-            accessibilityLabel="Record a voice note"
-          >
-            <Mic size={15} color="#8E9085" />
-          </Pressable>
-          <Pressable
-            onPress={handleSubmitText}
-            disabled={!text.trim() || busy}
-            className={`h-9 w-9 items-center justify-center rounded-full ${
-              text.trim() && !busy ? "bg-accent" : "bg-surface-inset"
-            }`}
-            accessibilityRole="button"
-            accessibilityLabel="Log meal"
-          >
-            <ArrowRight size={15} color={text.trim() && !busy ? "#0B0C09" : "#6E7066"} />
-          </Pressable>
+      <View className="mt-5">
+        <View className={`border ${isRecording ? "border-primary" : "border-line-strong"} bg-surface-low`}>
+          <TextInput
+            multiline
+            numberOfLines={3}
+            placeholder="Type what you ate… e.g. '200ml Nandini milk and 2 eggs'"
+            placeholderTextColor={colors.inkSubtle}
+            accessibilityLabel="Describe your meal"
+            value={text}
+            onChangeText={composer.setText}
+            editable={!isRecording && !isProcessing}
+            className={`min-h-[136px] p-4 pb-16 font-mono text-sm leading-relaxed text-ink ${isRecording || isProcessing ? "opacity-50" : ""}`}
+            style={{ textAlignVertical: "top" }}
+          />
+
+          <View className="absolute bottom-3 right-3 flex-row items-center gap-2">
+            {isRecording ? (
+              <View className="mr-1 flex-row items-center gap-1.5">
+                <View className="h-1.5 w-1.5 bg-primary" />
+                <Text className="font-mono-medium text-xs text-primary">{formatDuration(composer.elapsedSeconds)}</Text>
+              </View>
+            ) : null}
+            <ToolbarButton
+              label="Scan nutrition label(s)"
+              tone="neutral"
+              icon={Camera}
+              busy={isScanning}
+              disabled={isRecording || isProcessing || isScanning}
+              onPress={() => setChoosingSource(true)}
+            />
+            <ToolbarButton
+              label={isRecording ? "Stop recording" : "Speak instead"}
+              tone={isRecording ? "recording" : "neutral"}
+              icon={isRecording ? Square : Mic}
+              disabled={isProcessing}
+              onPress={isRecording ? composer.stopRecording : composer.startRecording}
+            />
+            <ToolbarButton
+              label="Log this meal"
+              tone="primary"
+              icon={SendHorizontal}
+              busy={isProcessing}
+              disabled={isRecording || isProcessing || !text.trim()}
+              onPress={composer.submit}
+            />
+          </View>
         </View>
+
+        <Text accessibilityLiveRegion="polite" className="mt-1.5 h-4 font-mono text-[11px] text-ink-muted">
+          {status}
+        </Text>
       </View>
 
-      <Text className="min-h-[15px] pl-0.5 font-sans text-[11px] text-text-secondary">
-        {isScanning ? "Reading nutrition label(s)…" : ""}
-      </Text>
+      <View className="mt-3 flex-row gap-3 border border-line bg-surface-low p-4">
+        <Lightbulb size={16} color={colors.ink} style={{ marginTop: 2 }} />
+        <Text className="flex-1 font-sans text-sm text-ink-muted">
+          <Text className="font-sans-bold text-ink">Tip:</Text> mention brands naturally —{" "}
+          <Text className="font-mono text-ink">&ldquo;200ml Nandini milk&rdquo;</Text> or{" "}
+          <Text className="font-mono text-ink">&ldquo;1 scoop Optimum Nutrition whey&rdquo;</Text>. Save{" "}
+          <Text className="font-sans-medium text-primary underline" onPress={onOpenBrandPreferences} accessibilityRole="link">
+            brand preferences
+          </Text>{" "}
+          to lock in exact label macros.
+        </Text>
+      </View>
 
-      {error ? <Banner variant="error" message={error} /> : null}
-      {scanMessage ? <Banner variant="success" message={scanMessage} /> : null}
-
-      <ScanLabelSheet ref={scanSheetRef} onTakePhoto={handleTakePhoto} onChooseLibrary={handleChooseLibrary} />
-    </View>
+      {choosingSource ? (
+        <ScanSourceModal onTakePhoto={takePhoto} onChooseLibrary={chooseFromLibrary} onClose={() => setChoosingSource(false)} />
+      ) : null}
+    </Card>
   );
 }

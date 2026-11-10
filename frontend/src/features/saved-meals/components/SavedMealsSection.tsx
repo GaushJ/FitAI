@@ -1,4 +1,4 @@
-import { Bookmark, Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
 import { IconButton } from "@/components/atoms/IconButton";
@@ -19,49 +19,57 @@ interface SavedMealsSectionProps {
 
 export function SavedMealsSection({ meals, loggingId, onNew, onLog, onEdit, onRemove }: SavedMealsSectionProps) {
   return (
-    <Card padding="md">
+    <Card>
       <SectionHeading
-        size="sm"
-        className="mb-3"
-        icon={<Bookmark className="text-accent" />}
+        className="mb-4"
+        subtitle="Reusable templates"
         action={
-          <Button size="xs" icon={<Plus />} onClick={onNew}>
+          <Button variant="ghost" size="xs" icon={<Plus />} className="text-primary" onClick={onNew}>
             New
           </Button>
         }
       >
-        Saved Meals
+        Saved meals
       </SectionHeading>
 
       {meals.length === 0 ? (
         <EmptyState size="sm">
-          Save meals you eat often — e.g. &quot;Omelette + Protein Shake&quot; — then log them in one tap and
-          tweak quantities or add ingredients each time.
+          Save meals you eat often — e.g. &quot;Omelette + Protein Shake&quot; — then log them in one tap.
         </EmptyState>
       ) : (
-        <div className="flex gap-3 overflow-x-auto pb-2">
+        <div className="space-y-3">
           {meals.map((meal) => (
             <MealTemplateCard
               key={meal.id}
               name={meal.name}
               macros={meal.macros}
-              meta={pluralize(meal.ingredients.length, "ingredient")}
+              meta={pluralize(meal.ingredients.length, "item")}
+              description={meal.ingredients.map((ing) => ing.name).join(", ")}
               actions={
                 <>
                   <Button
+                    variant="dark"
                     size="xs"
-                    className="flex-1"
-                    icon={<Bookmark />}
+                    icon={<Zap />}
                     loading={loggingId === meal.id}
                     title="Log this meal now, exactly as saved"
                     onClick={() => onLog(meal)}
                   >
-                    Log
+                    Log meal
                   </Button>
-                  <IconButton label="Change quantities, add/remove ingredients, or rename" onClick={() => onEdit(meal)}>
+                  <IconButton
+                    label="Change quantities, add/remove ingredients, or rename"
+                    variant="outline"
+                    onClick={() => onEdit(meal)}
+                  >
                     <Pencil />
                   </IconButton>
-                  <IconButton label="Delete this saved meal" variant="danger" onClick={() => onRemove(meal.id)}>
+                  <IconButton
+                    label="Delete this saved meal"
+                    variant="danger"
+                    className="ml-auto"
+                    onClick={() => onRemove(meal.id)}
+                  >
                     <Trash2 />
                   </IconButton>
                 </>

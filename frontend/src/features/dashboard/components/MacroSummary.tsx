@@ -1,122 +1,112 @@
-import { TrendingUp } from "lucide-react";
-import { Card } from "@/components/atoms/Card";
+import Link from "next/link";
+import { ArrowRight, Beef, Droplet, Flame, Info, Wheat, type LucideIcon } from "lucide-react";
 import { ProgressBar } from "@/components/atoms/ProgressBar";
-import { Spinner } from "@/components/atoms/Spinner";
-import { SectionHeading } from "@/components/molecules/SectionHeading";
+import { cn } from "@/lib/cn";
 import { percentOf } from "@/lib/nutrition";
 import type { Macros } from "@/types/nutrition";
 import type { TargetKey, UserProfile } from "@/features/settings/types";
 
-interface MacroTargetConfig {
-  key: "protein" | "carbs" | "fat";
+interface MacroCardConfig {
+  key: keyof Macros;
   label: string;
+  unit: "kcal" | "g";
   targetKey: TargetKey;
-  labelClassName: string;
-  percentClassName: string;
-  fillClassName: string;
+  icon: LucideIcon;
+  /** Protein is the number most users chase, so its card is emphasised. */
+  hero?: boolean;
 }
 
-const MACRO_TARGETS: MacroTargetConfig[] = [
-  {
-    key: "protein",
-    label: "Protein",
-    targetKey: "target_protein",
-    labelClassName: "text-purple-300",
-    percentClassName: "text-purple-400",
-    fillClassName: "bg-linear-to-r from-accent to-[#AFDF33]",
-  },
-  {
-    key: "carbs",
-    label: "Carbs",
-    targetKey: "target_carbs",
-    labelClassName: "text-cyan-300",
-    percentClassName: "text-cyan-400",
-    fillClassName: "bg-linear-to-r from-cyan-600 to-teal-600",
-  },
-  {
-    key: "fat",
-    label: "Fat",
-    targetKey: "target_fat",
-    labelClassName: "text-rose-300",
-    percentClassName: "text-rose-400",
-    fillClassName: "bg-linear-to-r from-rose-600 to-orange-600",
-  },
+const CARDS: MacroCardConfig[] = [
+  { key: "calories", label: "Calories", unit: "kcal", targetKey: "target_calories", icon: Flame },
+  { key: "protein", label: "Protein", unit: "g", targetKey: "target_protein", icon: Beef, hero: true },
+  { key: "carbs", label: "Carbs", unit: "g", targetKey: "target_carbs", icon: Wheat },
+  { key: "fat", label: "Fat", unit: "g", targetKey: "target_fat", icon: Droplet },
 ];
 
-const caloriesFill = (percent: number) =>
-  percent > 100
-    ? "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"
-    : percent > 85
-      ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]"
-      : "bg-accent shadow-[0_0_10px_rgba(201,242,77,0.5)]";
+const formatAmount = (value: number, unit: "kcal" | "g") => (unit === "g" ? `${value}g` : `${value} kcal`);
+
+function MacroCard({ config, consumed, target }: { config: MacroCardConfig; consumed: number; target: number }) {
+  const { label, unit, icon: Icon, hero } = config;
+  const percent = percentOf(consumed, target);
+  const remaining = Math.round(target - consumed);
+  const over = remaining < 0;
+
+  return (
+    <div
+      className={cn(
+        "flex min-h-48 flex-col bg-card p-5",
+        hero ? "border-2 border-primary shadow-hard-primary" : "border border-line",
+      )}
+    >
+      <div className="flex items-center justify-between">
+        <span
+          className={cn(
+            "font-mono text-sm font-medium uppercase tracking-widest",
+            hero ? "text-primary" : "text-ink-muted",
+          )}
+        >
+          {label}
+        </span>
+        <Icon className={cn("size-4", hero ? "text-primary" : "text-ink-subtle")} />
+      </div>
+
+      <p className={cn("mt-3 font-mono text-lg", hero ? "text-primary" : "text-ink-muted")}>
+        <span className={cn("font-display text-3xl font-bold", hero ? "text-primary" : "text-ink")}>
+          {Math.round(consumed).toLocaleString()}
+        </span>{" "}
+        / {target.toLocaleString()} {unit}
+      </p>
+      <p className={cn("mt-1 mb-5 font-mono text-xs", over ? "text-danger" : "text-ink-muted")}>
+        {over ? `${formatAmount(-remaining, unit)} over target` : `${formatAmount(remaining, unit)} remaining`}
+      </p>
+
+      <ProgressBar
+        label={label}
+        percent={percent}
+        className="mt-auto"
+        fillClassName={over ? "bg-danger" : hero ? "bg-primary" : "bg-ink"}
+      />
+      <div className="mt-2 flex justify-between font-mono text-[11px] uppercase tracking-wide">
+        <span className={cn("font-medium", hero ? "text-primary" : "text-ink")}>{percent}% reached</span>
+        <span className="text-ink-muted">Target {target.toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
 
 interface MacroSummaryProps {
   totals: Macros;
   profile: UserProfile;
-  loading: boolean;
 }
 
-/** Logged intake vs. daily targets: a calorie bar and one card per macro. */
-export function MacroSummary({ totals, profile, loading }: MacroSummaryProps) {
-  const caloriePercent = percentOf(totals.calories, profile.target_calories);
-
+/** Consumed vs. target for calories and each macro, plus how calories are derived. */
+export function MacroSummary({ totals, profile }: MacroSummaryProps) {
   return (
-    <Card padding="xl">
-      <SectionHeading
-        className="mb-6"
-        icon={<TrendingUp className="text-accent" />}
-        subtitle="Logged intake vs. daily targets"
-        action={
-          <div className="text-right">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Calories</span>
-            <p className="text-lg font-black text-accent">{caloriePercent}%</p>
-          </div>
-        }
-      >
-        Today&apos;s Macros
-      </SectionHeading>
+    <section aria-labelledby="macro-summary-title">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="macro-summary-title" className="font-mono text-sm uppercase tracking-widest text-ink">
+          {"// "}01 — Daily macro targets <span className="text-ink-subtle">· Consumed vs target</span>
+        </h2>
+      </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Spinner className="size-8 text-accent" />
-        </div>
-      ) : (
-        <div className="space-y-6">
-          <div>
-            <div className="mb-2 flex justify-between text-xs font-semibold">
-              <span className="text-slate-300">Calories (kcal)</span>
-              <span className="text-slate-400">
-                <strong className="text-slate-100">{Math.round(totals.calories)}</strong> / {profile.target_calories} kcal
-              </span>
-            </div>
-            <ProgressBar
-              size="lg"
-              label="Calories"
-              percent={caloriePercent}
-              fillClassName={caloriesFill(caloriePercent)}
-            />
-          </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {CARDS.map((config) => (
+          <MacroCard key={config.key} config={config} consumed={totals[config.key]} target={profile[config.targetKey]} />
+        ))}
+      </div>
 
-          <div className="grid grid-cols-1 gap-4 pt-2 md:grid-cols-3">
-            {MACRO_TARGETS.map((macro) => {
-              const target = profile[macro.targetKey];
-              const percent = percentOf(totals[macro.key], target);
-              return (
-                <div key={macro.key} className="rounded-2xl border border-slate-900 bg-slate-950/40 p-4">
-                  <div className="mb-1 flex items-center justify-between text-xs font-semibold">
-                    <span className={macro.labelClassName}>{macro.label}</span>
-                    <span className="text-slate-400">
-                      {Math.round(totals[macro.key])}g / {target}g
-                    </span>
-                  </div>
-                  <p className={`mb-2 text-[10px] font-bold ${macro.percentClassName}`}>{percent}% reached</p>
-                  <ProgressBar label={macro.label} percent={percent} fillClassName={macro.fillClassName} />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </Card>
+      <div className="mt-3 flex flex-col gap-2 border border-line bg-surface-low px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="flex items-center gap-2 font-mono text-xs text-ink-muted">
+          <Info className="size-4 shrink-0" />
+          Calories = 4 × protein + 4 × carbs + 9 × fat (Atwater factors)
+        </p>
+        <Link
+          href="/settings"
+          className="flex items-center gap-1 font-mono text-xs font-medium text-primary underline underline-offset-4"
+        >
+          Adjust macro targets <ArrowRight className="size-3.5" />
+        </Link>
+      </div>
+    </section>
   );
 }

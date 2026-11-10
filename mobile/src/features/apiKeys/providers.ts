@@ -1,38 +1,56 @@
-import type { ApiKeyProvider } from "@/lib/api/apiKeyStorage";
+import type { ApiKeyProvider as ProviderId } from "@/lib/api/apiKeyStorage";
 
-export interface ProviderInfo {
-  id: ApiKeyProvider;
+// Same list and copy as frontend/src/features/api-keys/providers.ts.
+export interface ApiKeyProvider {
+  id: ProviderId;
   label: string;
-  short: string;
+  /** Short capability tag, e.g. "Vision". */
+  tag: string;
   description: string;
-  hint: string;
-  required: boolean;
-  placeholder: string;
+  /** Shown while the key is missing. */
+  badge: "Required" | "Optional";
+  /** Where to create a key, and how. */
+  console: { url: string; host: string; steps: string };
 }
 
-export const PROVIDERS: ProviderInfo[] = [
+export const API_KEY_PROVIDERS: readonly ApiKeyProvider[] = [
   {
     id: "anthropic",
     label: "Anthropic Claude",
-    short: "Anthropic",
-    description: "Meal parsing, macro lookup & label scanning",
-    hint: "Required. Used for understanding what you ate, resolving macros, and reading nutrition labels.",
-    required: true,
-    placeholder: "sk-ant-...",
+    tag: "Primary · Vision",
+    description: "Meal extraction, macro resolution and nutrition-label vision.",
+    badge: "Required",
+    console: {
+      url: "https://console.anthropic.com/settings/keys",
+      host: "console.anthropic.com",
+      steps: "Sign in, open API Keys and create a key. Needed for parsing meals and reading label photos.",
+    },
   },
   {
     id: "groq",
     label: "Groq",
-    short: "Groq",
-    description: "Voice-to-text for spoken meals",
-    hint: "Optional. Only needed if you log meals by voice.",
-    required: false,
-    placeholder: "gsk_...",
+    tag: "Whisper",
+    description: "Fast Whisper speech-to-text for voice logging.",
+    badge: "Optional",
+    console: {
+      url: "https://console.groq.com/keys",
+      host: "console.groq.com",
+      steps: "Create a free API key. Used only to transcribe what you say into the mic.",
+    },
+  },
+  {
+    id: "tavily",
+    label: "Tavily Search",
+    tag: "Web search",
+    description: "Web search fallback for unknown ingredients.",
+    badge: "Optional",
+    console: {
+      url: "https://app.tavily.com",
+      host: "app.tavily.com",
+      steps: "Create an account and copy your API key from the dashboard.",
+    },
   },
 ];
 
-/** Shows just enough of a key to recognise it: first 6 and last 4 characters. */
-export function maskKey(key: string): string {
-  if (key.length <= 10) return "••••••";
-  return `${key.slice(0, 6)}…${key.slice(-4)}`;
-}
+/** Same mask as web's useApiKeys: first 4 and last 4 characters. */
+export const maskKey = (key: string) => `${key.slice(0, 4)}••••••••${key.slice(-4)}`;

@@ -9,19 +9,21 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import {
-  useFonts as useHankenGrotesk,
-  HankenGrotesk_400Regular,
-  HankenGrotesk_500Medium,
-  HankenGrotesk_600SemiBold,
-  HankenGrotesk_700Bold,
-} from "@expo-google-fonts/hanken-grotesk";
+  useFonts as useOswald,
+  Oswald_500Medium,
+  Oswald_600SemiBold,
+  Oswald_700Bold,
+} from "@expo-google-fonts/oswald";
 import {
-  useFonts as useBricolageGrotesque,
-  BricolageGrotesque_600SemiBold,
-  BricolageGrotesque_700Bold,
-} from "@expo-google-fonts/bricolage-grotesque";
+  useFonts as useInter,
+  Inter_400Regular,
+  Inter_500Medium,
+  Inter_600SemiBold,
+  Inter_700Bold,
+} from "@expo-google-fonts/inter";
 import {
   useFonts as useJetBrainsMono,
+  JetBrainsMono_400Regular,
   JetBrainsMono_500Medium,
   JetBrainsMono_700Bold,
 } from "@expo-google-fonts/jetbrains-mono";
@@ -32,22 +34,15 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 });
 
 export default function RootLayout() {
-  const [hankenLoaded] = useHankenGrotesk({
-    HankenGrotesk_400Regular,
-    HankenGrotesk_500Medium,
-    HankenGrotesk_600SemiBold,
-    HankenGrotesk_700Bold,
-  });
-  const [bricolageLoaded] = useBricolageGrotesque({
-    BricolageGrotesque_600SemiBold,
-    BricolageGrotesque_700Bold,
-  });
+  const [oswaldLoaded] = useOswald({ Oswald_500Medium, Oswald_600SemiBold, Oswald_700Bold });
+  const [interLoaded] = useInter({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
   const [monoLoaded] = useJetBrainsMono({
+    JetBrainsMono_400Regular,
     JetBrainsMono_500Medium,
     JetBrainsMono_700Bold,
   });
 
-  const fontsLoaded = hankenLoaded && bricolageLoaded && monoLoaded;
+  const fontsLoaded = oswaldLoaded && interLoaded && monoLoaded;
 
   useEffect(() => {
     if (fontsLoaded) {
@@ -62,7 +57,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="light" />
+        <StatusBar style="dark" />
         <AuthProvider>
           <BottomSheetModalProvider>
             <Stack screenOptions={{ headerShown: false }} />

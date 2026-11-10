@@ -1,57 +1,98 @@
-import { ArrowRight, Check } from "lucide-react";
-import { HERO_PERKS } from "@/features/landing/content";
-import { IngredientMarquee } from "@/features/landing/components/IngredientMarquee";
-import { LandingLink } from "@/features/landing/components/LandingLink";
-import { MealPreviewCard } from "@/features/landing/components/MealPreviewCard";
+import Link from "next/link";
+import { CircleCheck, ClipboardList, Mic, Tags } from "lucide-react";
+import { buttonClasses } from "@/components/atoms/Button";
+import { cn } from "@/lib/cn";
+import { HERO_PERKS, PREVIEW_MACROS, PREVIEW_PARSED } from "@/features/landing/content";
+
+/** Static example of the dashboard's macro panel and a parsed meal. */
+function TodaysMacrosPreview() {
+  return (
+    <div className="border border-ink bg-card p-5 shadow-hard sm:p-6" aria-label="Example of today's macros">
+      <div className="mb-4 flex items-center justify-between border-b border-line pb-3">
+        <p className="flex items-center gap-2 font-mono text-xs uppercase tracking-widest">
+          <span className="bg-ink px-1.5 py-0.5 text-white">Today&apos;s macros</span>
+          <span className="text-ink-muted">Calories &amp; targets</span>
+        </p>
+        <ClipboardList className="size-4 text-primary" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        {PREVIEW_MACROS.map((m) => (
+          <div key={m.label} className="border border-line bg-surface-low p-3">
+            <p className="flex justify-between font-mono text-[10px] uppercase tracking-widest text-ink-muted">
+              {m.label} <span>Goal: {m.goal}</span>
+            </p>
+            <p className="mt-1 font-mono text-xs text-ink-muted">
+              <span className={cn("font-display text-2xl font-bold", m.label === "Protein" ? "text-primary" : "text-ink")}>
+                {m.value}
+              </span>{" "}
+              {m.unit}
+            </p>
+            <div className="mt-2 h-1.5 bg-surface-highest">
+              <div className={cn("h-full", m.bar)} style={{ width: `${m.percent}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 border border-line p-3 font-mono text-xs">
+        <p className="flex justify-between text-ink-muted">
+          INPUT: &quot;200ml Nandini milk and 2 eggs&quot; <span className="text-primary">PARSED</span>
+        </p>
+        <ul className="mt-2 space-y-1 text-ink">
+          {PREVIEW_PARSED.map((row) => (
+            <li key={row.item} className="flex justify-between gap-3">
+              <span>• {row.item}</span>
+              <span className="shrink-0">{row.macros}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 border-t border-line pt-2 text-ink">
+          MEAL TOTAL: <span className="text-primary">260 kcal · 19.0g Protein · 9.4g Carbs · 13.0g Fat</span>
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function HeroSection() {
   return (
-    <section className="relative mx-auto max-w-[1240px] px-8 pt-[148px] pb-20 max-[640px]:px-5 max-[640px]:pt-32 max-[640px]:pb-14">
-      <div className="pointer-events-none absolute top-[60px] left-1/2 h-[520px] w-[780px] -translate-x-1/2 bg-[radial-gradient(ellipse_at_center,rgba(201,242,77,0.10),transparent_70%)] blur-[20px]" />
+    <section className="grid grid-cols-1 items-center gap-10 py-12 sm:py-16 lg:grid-cols-2 lg:gap-16">
+      <div>
+        <p className="inline-flex items-center gap-2 border border-line bg-surface-low px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-ink">
+          <Mic className="size-3.5 text-primary" /> Voice, text &amp; nutrition label logging
+        </p>
+        <h1 className="mt-6 font-display text-5xl font-bold uppercase leading-[0.95] tracking-tight text-ink sm:text-6xl xl:text-7xl">
+          Type, speak, or scan.
+          <br />
+          <span className="text-primary underline decoration-4 underline-offset-8">Real macros</span> in seconds.
+        </h1>
+        <p className="mt-6 max-w-xl text-lg text-ink-muted">
+          Type or speak what you ate — like{" "}
+          <em className="font-mono text-base not-italic text-ink">&quot;200ml Nandini milk and 2 eggs&quot;</em> — or upload a
+          photo of the nutrition label. GetFitBro parses each item, applies your saved brands, and calculates calories,
+          protein, carbs and fat.
+        </p>
 
-      <div className="relative grid grid-cols-[1.05fr_0.95fr] items-center gap-14 max-[900px]:grid-cols-1 max-[900px]:gap-10">
-        <div>
-          <div className="mb-7 inline-flex animate-fv-up items-center gap-2 rounded-full border border-accent/[0.28] bg-accent/10 px-3.5 py-1.5 text-xs font-semibold tracking-[0.02em] text-accent [animation-delay:0.05s]">
-            <span className="inline-block size-[7px] rounded-full bg-accent" />
-            AI-powered macro tracking
-          </div>
-
-          <h1 className="mb-6 animate-fv-up font-display text-[clamp(48px,6vw,74px)] leading-[0.96] font-extrabold tracking-[-0.03em] [animation-delay:0.05s]">
-            Know
-            <br />
-            exactly
-            <br />
-            what you <span className="text-accent">ate.</span>
-          </h1>
-
-          <p className="mb-9 max-w-[440px] animate-fv-up text-[19px] leading-[1.55] text-slate-400 [animation-delay:0.18s]">
-            Type or say what you ate and AI resolves the exact macros — by brand, portion and prep. No
-            searching food databases. No weighing in your head.
-          </p>
-
-          <div className="mb-[30px] flex animate-fv-up flex-wrap items-center gap-3.5 [animation-delay:0.3s]">
-            <LandingLink href="/login" variant="primary">
-              Start tracking free <ArrowRight size={18} strokeWidth={2.5} />
-            </LandingLink>
-            <LandingLink href="#how" variant="ghost">
-              See how it works
-            </LandingLink>
-          </div>
-
-          <div className="flex animate-fv-up items-center gap-[18px] text-[13px] font-medium text-slate-600 [animation-delay:0.42s]">
-            {HERO_PERKS.map((perk) => (
-              <span key={perk} className="inline-flex items-center gap-1.5">
-                <Check size={14} strokeWidth={3} className="text-accent" />
-                {perk}
-              </span>
-            ))}
-          </div>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href="/login" className={buttonClasses({ size: "lg" })}>
+            <ClipboardList className="size-5" /> Try meal logging
+          </Link>
+          <a href="#brands" className={cn(buttonClasses({ variant: "outline", size: "lg" }), "border-2 shadow-hard-sm press-3d press-depth-2")}>
+            <Tags className="size-5" /> Brand preferences
+          </a>
         </div>
 
-        <MealPreviewCard />
+        <ul className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-line pt-5 font-mono text-xs text-ink-muted">
+          {HERO_PERKS.map((perk) => (
+            <li key={perk} className="flex items-center gap-1.5">
+              <CircleCheck className="size-3.5 text-primary" /> {perk}
+            </li>
+          ))}
+        </ul>
       </div>
 
-      <IngredientMarquee />
+      <TodaysMacrosPreview />
     </section>
   );
 }

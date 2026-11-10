@@ -1,10 +1,12 @@
 import { apiRequest } from "@/lib/api/client";
 import type { HistoryResponse, ProgressResponse } from "./types";
 
-export function getProgress(): Promise<ProgressResponse> {
-  return apiRequest<ProgressResponse>("/api/progress");
-}
+// Same as frontend/src/features/progress/api.ts.
+export const HISTORY_PAGE_SIZE = 15;
 
-export function getHistory(page: number, perPage = 15): Promise<HistoryResponse> {
-  return apiRequest<HistoryResponse>(`/api/history?page=${page}&per_page=${perPage}`);
-}
+export const fetchProgress = () => apiRequest<ProgressResponse>("/api/progress", { errorMessage: "Failed to load progress" });
+
+export const fetchHistory = (page: number) =>
+  apiRequest<HistoryResponse>(`/api/history?page=${page}&per_page=${HISTORY_PAGE_SIZE}`, {
+    errorMessage: "Failed to load history",
+  });

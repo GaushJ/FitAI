@@ -1,48 +1,22 @@
-import { HOW_IT_WORKS_STEPS } from "@/features/landing/content";
-import { Panel } from "@/features/landing/components/Panel";
-import { Reveal } from "@/features/landing/components/Reveal";
-import { SectionIntro } from "@/features/landing/components/SectionIntro";
+import { LandingSection } from "@/features/landing/components/LandingSection";
+import { LOGGING_STEPS } from "@/features/landing/content";
 
 export function HowItWorksSection() {
   return (
-    <section id="how" className="mx-auto max-w-[1240px] px-8 py-[110px] max-[640px]:px-5 max-[640px]:py-16">
-      <Reveal className="mb-[72px] text-center">
-        <SectionIntro eyebrow="Three steps" titleClassName="text-[clamp(32px,4vw,54px)] leading-[1.02]">
-          From spoken to logged
-          <br />
-          in under five seconds.
-        </SectionIntro>
-      </Reveal>
-
-      <div className="grid grid-cols-3 gap-[22px] max-[860px]:grid-cols-2 max-[560px]:grid-cols-1">
-        {HOW_IT_WORKS_STEPS.map((step, index) => (
-          <Reveal key={step.number} delay={index * 0.1}>
-            <Panel className="relative h-full rounded-[22px] px-7 py-8">
-              <span className="absolute top-[26px] right-7 font-display text-[40px] leading-none font-extrabold text-accent/[0.13]">
-                {step.number}
-              </span>
-              <div className="mb-[22px] flex size-[52px] items-center justify-center rounded-[15px] border border-accent/[0.28] bg-accent/[0.12]">
-                <svg
-                  width={22}
-                  height={22}
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  className="text-accent"
-                  aria-hidden
-                >
-                  <path d={step.iconPath} />
-                </svg>
-              </div>
-              <h3 className="mb-2.5 font-display text-[22px] font-bold tracking-[-0.01em]">{step.title}</h3>
-              <p className="text-[15px] leading-[1.55] text-slate-400">{step.description}</p>
-            </Panel>
-          </Reveal>
+    <LandingSection id="logging" index="01" title="How logging works">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        {LOGGING_STEPS.map(({ title, description, example, icon: Icon }, index) => (
+          <article key={title} className="flex flex-col border border-line bg-card p-6 transition hover:border-ink">
+            <div className="flex items-start justify-between">
+              <span className="font-display text-3xl font-bold text-surface-highest">0{index + 1}</span>
+              <Icon className="size-5 text-primary" />
+            </div>
+            <h3 className="mt-4 font-display text-xl font-semibold uppercase text-ink">{title}</h3>
+            <p className="mt-2 flex-1 text-sm text-ink-muted">{description}</p>
+            <p className="mt-5 bg-surface-container px-3 py-2.5 font-mono text-xs text-ink">{example}</p>
+          </article>
         ))}
       </div>
-    </section>
+    </LandingSection>
   );
 }

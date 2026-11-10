@@ -17,16 +17,27 @@ describe("LoginForm", () => {
     await render(<AuthProvider><LoginForm onSuccess={onSuccess} onSwitchToSignup={() => {}} /></AuthProvider>);
 
     await act(async () => {
-      await fireEvent.changeText(screen.getByPlaceholderText("your_username"), "ada");
+      await fireEvent.changeText(screen.getByPlaceholderText("your_handle"), "ada");
     });
     await act(async () => {
       await fireEvent.changeText(screen.getByPlaceholderText("••••••••"), "wrongpass");
     });
     await act(async () => {
-      await fireEvent.press(screen.getByText("Sign In"));
+      await fireEvent.press(screen.getByText("Sign in"));
     });
 
     await waitFor(() => expect(screen.getByText("Invalid username or password.")).toBeTruthy());
     expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it("asks for both fields instead of calling the API when one is empty", async () => {
+    await render(<AuthProvider><LoginForm onSuccess={() => {}} onSwitchToSignup={() => {}} /></AuthProvider>);
+
+    await act(async () => {
+      await fireEvent.press(screen.getByText("Sign in"));
+    });
+
+    expect(screen.getByText("Enter your username and password.")).toBeTruthy();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 });

@@ -1,24 +1,26 @@
-import { CtaSection } from "@/features/landing/components/CtaSection";
+import { BrandPreferencesSection } from "@/features/landing/components/BrandPreferencesSection";
+import { ByokSection } from "@/features/landing/components/ByokSection";
 import { HeroSection } from "@/features/landing/components/HeroSection";
 import { HowItWorksSection } from "@/features/landing/components/HowItWorksSection";
 import { LandingFooter } from "@/features/landing/components/LandingFooter";
 import { LandingNav } from "@/features/landing/components/LandingNav";
-import { ResolutionSection } from "@/features/landing/components/ResolutionSection";
-import { StatsSection } from "@/features/landing/components/StatsSection";
-import { StreakSection } from "@/features/landing/components/StreakSection";
-import { TestimonialSection } from "@/features/landing/components/TestimonialSection";
+import { MealsSection } from "@/features/landing/components/MealsSection";
+import { PricingSection } from "@/features/landing/components/PricingSection";
+import { TargetsSection } from "@/features/landing/components/TargetsSection";
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen overflow-x-hidden bg-ink text-slate-100">
+    <div className="min-h-screen bg-surface text-ink">
       <LandingNav />
-      <HeroSection />
-      <HowItWorksSection />
-      <ResolutionSection />
-      <StreakSection />
-      <StatsSection />
-      <TestimonialSection />
-      <CtaSection />
+      <main className="mx-auto max-w-7xl px-4 sm:px-8">
+        <HeroSection />
+        <HowItWorksSection />
+        <BrandPreferencesSection />
+        <MealsSection />
+        <TargetsSection />
+        <ByokSection />
+        <PricingSection />
+      </main>
       <LandingFooter />
     </div>
   );

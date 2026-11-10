@@ -9,7 +9,7 @@
 - runScript: random_user.js
 
 # Login screen opens on the "Sign In" tab by default — switch to signup.
-- tapOn: "Create Account"
+- tapOn: "Create account"
 
 - tapOn: "Your Name"
 - inputText: ${output.name}
@@ -25,7 +25,7 @@
 # tab bar renders above the form. If Maestro reports this ambiguous on your
 # install, replace with a testID-based selector instead.
 - tapOn:
-    text: "Create Account"
+    text: "Create account"
     index: 1
 
-- assertVisible: "Log a meal… e.g. 2 eggs and toast"
+- assertVisible: "Macro dashboard"

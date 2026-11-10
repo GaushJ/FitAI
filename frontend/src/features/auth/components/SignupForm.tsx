@@ -32,10 +32,9 @@ export function SignupForm({ onSwitchToLogin }: { onSwitchToLogin: () => void })
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <FormField label="Display Name" labelClassName="text-slate-600">
+      <FormField label="Display name">
         <AuthInput
           icon={User}
-          iconClassName="text-accent"
           type="text"
           required
           autoFocus
@@ -45,7 +44,7 @@ export function SignupForm({ onSwitchToLogin }: { onSwitchToLogin: () => void })
         />
       </FormField>
 
-      <FormField label="Username" labelClassName="text-slate-600">
+      <FormField label="Username">
         <AuthInput
           icon={User}
           type="text"
@@ -66,14 +65,14 @@ export function SignupForm({ onSwitchToLogin }: { onSwitchToLogin: () => void })
       />
 
       <PasswordField
-        label="Confirm Password"
+        label="Confirm password"
         placeholder="••••••••"
         value={confirm}
         onChange={setConfirm}
         invalid={mismatch}
       />
 
-      {mismatch && <p className="-mt-2 text-[11px] text-red-400">Passwords don&apos;t match.</p>}
+      {mismatch && <p className="-mt-2 text-xs text-danger">Passwords don&apos;t match.</p>}
       {error && <Alert tone="error">{error}</Alert>}
 
       <Button
@@ -85,15 +84,15 @@ export function SignupForm({ onSwitchToLogin }: { onSwitchToLogin: () => void })
         disabled={mismatch}
         icon={<UserPlus />}
       >
-        Create Account
+        Create account
       </Button>
 
-      <p className="text-center text-xs text-slate-500">
+      <p className="border-t border-line pt-5 text-center text-sm text-ink-muted">
         Already have an account?{" "}
         <button
           type="button"
           onClick={onSwitchToLogin}
-          className="cursor-pointer text-xs font-semibold text-accent"
+          className="cursor-pointer font-mono text-xs font-medium uppercase tracking-widest text-ink underline underline-offset-4 hover:text-primary"
         >
           Sign in →
         </button>

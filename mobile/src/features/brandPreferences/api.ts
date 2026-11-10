@@ -1,64 +1,65 @@
+import { Directory, File, Paths } from "expo-file-system";
 import { apiRequest } from "@/lib/api/client";
-import type { BrandPreference, LabelExtractResponse, ResolvedMacros, SaveBrandPreferencePayload } from "./types";
+import { getToken } from "@/lib/api/authStorage";
+import { API_BASE_URL } from "@/lib/api/config";
+import type { BrandPreference, LabelExtractResponse, LabelUnit, Per100gMacros } from "./types";
 
-export function getBrandPreferences(): Promise<BrandPreference[]> {
-  return apiRequest<BrandPreference[]>("/api/brand-preferences");
+// Same endpoints, functions and messages as frontend/src/features/brand-preferences/api.ts.
+const BASE = "/api/brand-preferences";
+
+export const fetchBrandPreferences = () => apiRequest<BrandPreference[]>(BASE);
+
+export const saveBrandPreference = (body: { ingredient_name: string; preferred_brand: string } & Partial<Per100gMacros>) =>
+  apiRequest(BASE, { method: "POST", json: body, errorMessage: "Save failed" });
+
+export const deleteBrandPreference = (ingredientName: string) =>
+  apiRequest(`${BASE}/${encodeURIComponent(ingredientName)}`, { method: "DELETE" });
+
+export const renameBrandPreference = (ingredientName: string, body: { new_ingredient_name: string; new_brand: string }) =>
+  apiRequest(`${BASE}/${encodeURIComponent(ingredientName)}/rename`, {
+    method: "PATCH",
+    json: body,
+    errorMessage: "Rename failed",
+  });
+
+export const updateBrandPreferenceMacros = (ingredientName: string, macros: Per100gMacros) =>
+  apiRequest(`${BASE}/${encodeURIComponent(ingredientName)}/macros`, {
+    method: "PATCH",
+    json: macros,
+    errorMessage: "Macro save failed",
+  });
+
+/** React Native's FormData takes a {uri, name, type} descriptor where web passes a File — hence the cast. */
+export function extractBrandLabel(params: {
+  ingredient: string;
+  brand: string;
+  image: { uri: string; name: string; type: string };
+  unit: LabelUnit;
+}) {
+  const form = new FormData();
+  form.append("ingredient_name", params.ingredient);
+  form.append("preferred_brand", params.brand);
+  form.append("image", params.image as unknown as Blob);
+  form.append("unit", params.unit);
+  return apiRequest<LabelExtractResponse>(`${BASE}/label`, { method: "POST", form, errorMessage: "Extraction failed" });
 }
 
-export function saveBrandPreference(
-  payload: SaveBrandPreferencePayload
-): Promise<{ status: string; ingredient_name: string; preferred_brand: string }> {
-  return apiRequest("/api/brand-preferences", { method: "POST", json: payload });
-}
-
-export function updateBrandPreference(
-  ingredientName: string,
-  newName: string,
-  newBrand: string,
-  macros: ResolvedMacros
-): Promise<{ status: string; ingredient_name: string }> {
-  const nameChanged = newName.trim().toLowerCase() !== ingredientName.toLowerCase();
-  const renamed = nameChanged
-    ? apiRequest<{ status: string; ingredient_name: string; brand: string }>(
-        `/api/brand-preferences/${encodeURIComponent(ingredientName)}/rename`,
-        { method: "PATCH", json: { new_ingredient_name: newName, new_brand: newBrand } }
-      )
-    : Promise.resolve(null);
-
-  return renamed.then((renameResult) =>
-    apiRequest(`/api/brand-preferences/${encodeURIComponent(renameResult ? renameResult.ingredient_name : ingredientName)}/macros`, {
-      method: "PATCH",
-      json: macros,
-    })
-  );
-}
-
-export function deleteBrandPreference(ingredientName: string): Promise<{ status: string; ingredient_name: string }> {
-  return apiRequest(`/api/brand-preferences/${encodeURIComponent(ingredientName)}`, { method: "DELETE" });
-}
-
-export function resolveIngredientMacros(name: string, brand: string, weightG = 100): Promise<ResolvedMacros> {
-  return apiRequest<ResolvedMacros>("/api/resolve-ingredient", {
-    method: "POST",
-    json: { name, brand, weight_g: weightG },
+/** Downloads the .xlsx export into the app cache; the caller hands the file to the share sheet
+ * (the phone's equivalent of web's browser download). */
+export async function exportBrandPreferences(): Promise<File> {
+  const token = await getToken();
+  return File.downloadFileAsync(`${API_BASE_URL}${BASE}/export`, new Directory(Paths.cache), {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    idempotent: true,
   });
 }
 
-export interface SaveByLabelParams {
-  ingredientName: string;
-  preferredBrand: string;
-  unit: "g" | "ml";
-  imageUri: string;
-  imageName: string;
-  imageType: string;
-}
-
-/** See dashboard's trackMealWithAudio for why the {uri, name, type} descriptor needs this cast. */
-export function saveBrandFromLabel(params: SaveByLabelParams): Promise<LabelExtractResponse> {
+export function importBrandPreferences(file: { uri: string; name: string; mimeType?: string }) {
   const form = new FormData();
-  form.append("ingredient_name", params.ingredientName);
-  form.append("preferred_brand", params.preferredBrand);
-  form.append("unit", params.unit);
-  form.append("image", { uri: params.imageUri, name: params.imageName, type: params.imageType } as unknown as Blob);
-  return apiRequest<LabelExtractResponse>("/api/brand-preferences/label", { method: "POST", form });
+  form.append("file", {
+    uri: file.uri,
+    name: file.name,
+    type: file.mimeType ?? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  } as unknown as Blob);
+  return apiRequest<{ message: string; warnings?: string[] }>(`${BASE}/import`, { method: "POST", form, errorMessage: "Import failed" });
 }

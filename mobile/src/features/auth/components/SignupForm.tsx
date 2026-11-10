@@ -1,10 +1,13 @@
 import { useState } from "react";
-import { View, Text } from "react-native";
-import { User, Lock, UserPlus } from "lucide-react-native";
-import { Banner } from "@/components/ui";
+import { Text, View } from "react-native";
+import { User, UserPlus } from "lucide-react-native";
+import { Alert, Button, FormField } from "@/components/ui";
+import { getErrorMessage } from "@/lib/errors";
 import { useAuth } from "../AuthContext";
-import { AuthField } from "./AuthField";
-import { AuthSubmitButton } from "./AuthSubmitButton";
+import { AuthInput, PasswordField } from "./AuthInputs";
+
+// Port of web's SignupForm.
+const MIN_PASSWORD_LENGTH = 6;
 
 interface SignupFormProps {
   onSuccess: () => void;
@@ -20,78 +23,61 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: SignupFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const mismatch = confirm.length > 0 && password !== confirm;
-  const canSubmit = name.trim() && username.trim() && password.length >= 6 && password === confirm;
-
-  const handleUsernameChange = (text: string) => {
-    setUsername(text.toLowerCase().replace(/\s+/g, "_"));
-  };
+  const mismatch = Boolean(confirm) && password !== confirm;
 
   const handleSubmit = async () => {
     setError("");
-    if (password !== confirm) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
+    if (!name.trim() || !username.trim()) return setError("Fill in your name and username.");
+    if (password !== confirm) return setError("Passwords do not match.");
+    if (password.length < MIN_PASSWORD_LENGTH) return setError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
     setLoading(true);
     try {
-      await signup(name.trim(), username.trim(), password);
+      await signup(name.trim(), username.trim().toLowerCase(), password);
       onSuccess();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Network error. Is the backend running?");
+      setError(getErrorMessage(err, "Network error. Is the backend running?"));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View className="gap-3.5">
-      <AuthField label="Display Name" icon={User} iconColor="#C9F24D" value={name} onChangeText={setName} placeholder="Your Name" />
-      <AuthField
-        label="Username"
-        icon={User}
-        value={username}
-        onChangeText={handleUsernameChange}
-        placeholder="your_handle"
-        mono
-      />
-      <AuthField
-        label="Password"
-        icon={Lock}
-        value={password}
-        onChangeText={setPassword}
-        placeholder="Min 6 characters"
-        secureToggle
-      />
-      <AuthField
-        label="Confirm Password"
-        icon={Lock}
-        value={confirm}
-        onChangeText={setConfirm}
-        placeholder="••••••••"
-        secureToggle
-        borderColor={mismatch ? "rgba(239,68,68,0.5)" : undefined}
-      />
-      {mismatch ? <Text className="-mt-1.5 font-sans text-[11px] text-danger">Passwords don't match.</Text> : null}
-      {error ? <Banner variant="error" message={error} /> : null}
-      <AuthSubmitButton
-        loading={loading}
-        label="Create Account"
-        loadingLabel="Creating..."
-        icon={UserPlus}
-        onPress={handleSubmit}
-        disabled={!canSubmit}
-      />
-      <Text className="text-center font-sans text-xs text-text-secondary">
-        Already have an account?{" "}
-        <Text className="font-sans-semibold text-xs text-accent" onPress={onSwitchToLogin}>
-          Sign in →
+    <View className="gap-4">
+      <FormField label="Display name">
+        <AuthInput icon={User} autoCapitalize="words" placeholder="Your Name" accessibilityLabel="Display name" value={name} onChangeText={setName} />
+      </FormField>
+
+      <FormField label="Username">
+        <AuthInput
+          icon={User}
+          mono
+          placeholder="your_handle"
+          accessibilityLabel="Username"
+          value={username}
+          onChangeText={(text) => setUsername(text.toLowerCase().replace(/\s+/g, "_"))}
+        />
+      </FormField>
+
+      <PasswordField label="Password" placeholder={`Min ${MIN_PASSWORD_LENGTH} characters`} value={password} onChange={setPassword} revealable />
+
+      <View className="gap-2">
+        <PasswordField label="Confirm password" placeholder="••••••••" value={confirm} onChange={setConfirm} invalid={mismatch} />
+        {mismatch ? <Text className="font-sans text-xs text-danger">{"Passwords don't match."}</Text> : null}
+      </View>
+      {error ? <Alert tone="error">{error}</Alert> : null}
+
+      <Button size="lg" fullWidth loading={loading} loadingText="Creating..." disabled={mismatch} icon={UserPlus} onPress={handleSubmit}>
+        Create account
+      </Button>
+
+      <View className="border-t border-line pt-5">
+        <Text className="text-center font-sans text-sm text-ink-muted">
+          Already have an account?{" "}
+          <Text onPress={onSwitchToLogin} accessibilityRole="button" className="font-mono-medium text-xs uppercase tracking-widest text-ink underline">
+            Sign in →
+          </Text>
         </Text>
-      </Text>
+      </View>
     </View>
   );
 }

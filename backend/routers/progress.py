@@ -1,14 +1,24 @@
 import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.security import get_current_user
 from db.models import DailyFoodLog, User
 from db.session import get_db
+from services.macros import totals_from_ingredients
 
 router = APIRouter(prefix="/api", tags=["progress"])
+
+
+class IngredientMacroUpdate(BaseModel):
+    weight_g: float
+    calories_per_100g: float
+    protein_per_100g: float
+    carbs_per_100g: float
+    fat_per_100g: float
 
 
 @router.get("/progress")
@@ -145,6 +155,48 @@ async def get_history(
         "page": page,
         "per_page": per_page,
         "total_pages": max(1, (total + per_page - 1) // per_page),
+    }
+
+
+@router.patch("/meals/{meal_id}/ingredients/{ingredient_index}")
+async def update_meal_ingredient(
+    meal_id: int,
+    ingredient_index: int,
+    payload: IngredientMacroUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Overwrite the macros/weight of one ingredient within a logged meal and
+    recompute the meal's totals. Users can only edit their own meals."""
+    result = await db.execute(
+        select(DailyFoodLog).where(
+            DailyFoodLog.id == meal_id,
+            DailyFoodLog.user_id == current_user.id,   # ownership check
+        )
+    )
+    meal = result.scalar_one_or_none()
+    if not meal:
+        raise HTTPException(status_code=404, detail="Meal not found or does not belong to you.")
+
+    ingredients = list(meal.computed_macros.get("resolved_ingredients", []))
+    if ingredient_index < 0 or ingredient_index >= len(ingredients):
+        raise HTTPException(status_code=404, detail="Ingredient not found in this meal.")
+
+    ingredients[ingredient_index] = {**ingredients[ingredient_index], **payload.model_dump()}
+    total_meal_macros = totals_from_ingredients(ingredients)
+
+    # Reassigning (rather than mutating) computed_macros so SQLAlchemy detects the change.
+    meal.computed_macros = {
+        **meal.computed_macros,
+        "resolved_ingredients": ingredients,
+        "total_meal_macros": total_meal_macros,
+    }
+    await db.commit()
+
+    return {
+        "id": meal.id,
+        "ingredients": ingredients,
+        "macros": total_meal_macros,
     }
 
 

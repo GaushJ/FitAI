@@ -56,6 +56,7 @@ async def get_dashboard(
             "name": current_user.name,
             "username": current_user.username,
             "current_streak": current_user.current_streak,
+            "is_pro": current_user.is_pro,
             "target_calories": current_user.target_calories,
             "target_protein": current_user.target_protein,
             "target_carbs": current_user.target_carbs,

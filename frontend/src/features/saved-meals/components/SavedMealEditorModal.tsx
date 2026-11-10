@@ -34,10 +34,9 @@ export function SavedMealEditorModal({
   return (
     <Modal
       contained
-      compact
       size="md"
-      title={editor.isNew ? "New Saved Meal" : "Edit Saved Meal"}
-      icon={<Bookmark className="text-accent" />}
+      title={editor.isNew ? "New saved meal" : "Edit saved meal"}
+      icon={<Bookmark />}
       subtitle="Adjust quantities, add or remove ingredients, then log or save."
       onClose={onClose}
       bodyClassName="space-y-4"
@@ -46,14 +45,14 @@ export function SavedMealEditorModal({
           {editor.notice && <Alert tone={editor.notice.tone}>{editor.notice.text}</Alert>}
           <div className="flex gap-2">
             <Button
-              variant="secondary"
+              variant="outline"
               className="flex-1"
               icon={<Save />}
               loading={editor.saving}
               title="Save changes to this meal template for next time"
               onClick={editor.saveTemplate}
             >
-              Save Meal
+              Save meal
             </Button>
             <Button
               className="flex-1"
@@ -62,13 +61,13 @@ export function SavedMealEditorModal({
               title="Log this meal now with these ingredients"
               onClick={() => editor.saveAndLog(onClose)}
             >
-              Log Now
+              Log now
             </Button>
           </div>
         </div>
       }
     >
-      <FormField label="Meal name" labelClassName="text-slate-400">
+      <FormField label="Meal name">
         <Input
           type="text"
           value={editor.name}
@@ -78,9 +77,9 @@ export function SavedMealEditorModal({
       </FormField>
 
       <div className="space-y-2">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Ingredients</p>
+        <p className="font-mono text-[11px] font-medium uppercase tracking-widest text-ink-muted">Ingredients</p>
         {editor.ingredients.length === 0 ? (
-          <p className="text-[11px] italic text-slate-600">No ingredients yet — add one below.</p>
+          <p className="text-sm italic text-ink-subtle">No ingredients yet — add one below.</p>
         ) : (
           editor.ingredients.map((ingredient, index) => (
             <EditorIngredientRow
@@ -100,8 +99,8 @@ export function SavedMealEditorModal({
         onAdd={editor.addIngredient}
       />
 
-      <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-        <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-600">Total macros</p>
+      <div className="border border-line bg-surface-low p-3">
+        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-muted">Total macros</p>
         <MacroInline macros={editor.totals} />
       </div>
     </Modal>

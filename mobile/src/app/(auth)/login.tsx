@@ -1,46 +1,61 @@
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
-import { Dumbbell } from "lucide-react-native";
-import { AuthTabs, LoginForm, SignupForm, type AuthTab } from "@/features/auth/components";
+import { ShieldCheck } from "lucide-react-native";
+import { DotsBackground } from "@/components/layout/DotsBackground";
+import { BrandLogo, SegmentedTabs } from "@/components/ui";
+import { LoginForm, SignupForm } from "@/features/auth/components";
+import { colors, shadows } from "@/theme/colors";
 
+type AuthMode = "login" | "signup";
+
+const TABS = [
+  { id: "login" as const, label: "Sign in" },
+  { id: "signup" as const, label: "Create account" },
+];
+
+/** Port of web's AuthScreen (minus its "Back to home" link — the app has no marketing page). */
 export default function LoginScreen() {
   const router = useRouter();
-  const [tab, setTab] = useState<AuthTab>("login");
-
-  const handleAuthSuccess = () => {
-    router.replace("/(tabs)/dashboard");
-  };
+  const [mode, setMode] = useState<AuthMode>("login");
+  const handleAuthSuccess = () => router.replace("/(tabs)/dashboard");
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-bg"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView contentContainerClassName="flex-grow items-center justify-center p-6" keyboardShouldPersistTaps="handled">
-        <View className="mb-6 items-center gap-2">
-          <View className="flex-row items-center gap-2">
-            <Dumbbell size={22} color="#C9F24D" strokeWidth={1.8} />
-            <Text className="font-display text-lg text-text-primary" style={{ letterSpacing: -0.4 }}>
-              GetFitbro
+    <SafeAreaView className="flex-1 bg-surface">
+      <View className="flex-row items-center border-b border-line bg-surface px-4 py-3">
+        <Text className="bg-ink px-2 py-1 font-mono text-xs uppercase tracking-widest text-white">Sign in</Text>
+      </View>
+
+      <View className="flex-1">
+        <DotsBackground />
+        <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          <ScrollView contentContainerClassName="flex-grow items-center justify-center px-4 py-12" keyboardShouldPersistTaps="handled">
+            <BrandLogo size="lg" />
+            <Text className="mt-3 text-center font-mono text-xs uppercase tracking-widest text-ink-muted">
+              {"// "}Macro tracking via voice, text &amp; labels
             </Text>
-          </View>
-          <Text className="font-sans text-xs text-text-secondary">AI-powered macro tracking</Text>
-        </View>
 
-        <View className="w-full max-w-[420px] overflow-hidden rounded-lg border border-border-subtle bg-surface">
-          <AuthTabs tab={tab} onChange={setTab} />
-          <View className="p-6">
-            {tab === "login" ? (
-              <LoginForm onSuccess={handleAuthSuccess} onSwitchToSignup={() => setTab("signup")} />
-            ) : (
-              <SignupForm onSuccess={handleAuthSuccess} onSwitchToLogin={() => setTab("login")} />
-            )}
-          </View>
-        </View>
+            <View className="mt-8 w-full max-w-md border border-ink bg-card p-6" style={shadows.hard}>
+              <SegmentedTabs tabs={TABS} value={mode} onChange={setMode} tone="light" />
+              <View className="mt-6">
+                {mode === "login" ? (
+                  <LoginForm onSuccess={handleAuthSuccess} onSwitchToSignup={() => setMode("signup")} />
+                ) : (
+                  <SignupForm onSuccess={handleAuthSuccess} onSwitchToLogin={() => setMode("login")} />
+                )}
+              </View>
+            </View>
 
-        <Text className="mt-5 font-sans text-[10px] text-text-muted">Your data is private and never shared.</Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <View className="mt-6 max-w-md flex-row items-center justify-center gap-2">
+              <ShieldCheck size={16} color={colors.inkMuted} />
+              <Text className="flex-shrink text-center font-sans text-sm text-ink-muted">
+                Your meal logs are private to your account. No ads, no third-party trackers.
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </SafeAreaView>
   );
 }

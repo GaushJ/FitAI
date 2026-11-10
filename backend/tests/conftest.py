@@ -6,6 +6,16 @@ import os
 
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@localhost:5433/getfitbro_test")
 
+# paykit (routers/payments.py) builds its PaymentService at import time via
+# build_service_from_env() — these must exist before `from main import app`
+# runs anywhere. PAYKIT_PROVIDER=dummy means no real Razorpay keys are needed
+# for tests (see paykit.providers.dummy.DummyProvider); the key/secret values
+# below are never actually used by it.
+os.environ.setdefault("PAYKIT_PROVIDER", "dummy")
+os.environ.setdefault("PAYKIT_RAZORPAY_KEY_ID", "rzp_test_unused")
+os.environ.setdefault("PAYKIT_RAZORPAY_KEY_SECRET", "unused")
+os.environ.setdefault("PAYKIT_RAZORPAY_WEBHOOK_SECRET", "unused")
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 

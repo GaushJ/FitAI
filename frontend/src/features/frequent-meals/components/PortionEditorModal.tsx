@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Sliders, Zap } from "lucide-react";
+import { SlidersHorizontal, Zap } from "lucide-react";
 import { Button } from "@/components/atoms/Button";
 import { Input } from "@/components/atoms/Input";
 import { MacroInline } from "@/components/molecules/MacroInline";
@@ -27,16 +27,13 @@ export function PortionEditorModal({ meal, logging, onClose, onConfirm }: Portio
   );
 
   const gramsFor = (name: string, fallback: number) => grams[name] ?? fallback ?? DEFAULT_GRAMS;
-  const estimate = roundMacros(
-    sumIngredientMacros(meal.ingredients, (ing) => gramsFor(ing.name || "", ing.weight_g)),
-  );
+  const estimate = roundMacros(sumIngredientMacros(meal.ingredients, (ing) => gramsFor(ing.name || "", ing.weight_g)));
 
   return (
     <Modal
-      compact
       size="md"
-      title="Adjust Portions"
-      icon={<Sliders className="text-accent" />}
+      title="Adjust portions"
+      icon={<SlidersHorizontal />}
       subtitle={meal.display_name}
       onClose={onClose}
       bodyClassName="space-y-3"
@@ -44,43 +41,37 @@ export function PortionEditorModal({ meal, logging, onClose, onConfirm }: Portio
       {meal.ingredients.map((ing) => {
         const name = ing.name || "";
         return (
-          <div key={name} className="flex items-center gap-3">
-            <span className="flex-1 text-xs font-medium capitalize text-slate-300">{name}</span>
-            <div className="flex items-center gap-1">
+          <div key={name} className="flex items-center gap-3 border-b border-line pb-3">
+            <span className="flex-1 font-display text-sm font-medium capitalize text-ink">{name}</span>
+            <div className="flex items-center gap-1.5">
               <Input
                 type="number"
                 min={1}
                 size="sm"
                 aria-label={`${name} grams`}
-                className="w-20 text-right"
+                className="w-20 text-right font-mono"
                 value={gramsFor(name, ing.weight_g)}
                 onChange={(e) => setGrams((prev) => ({ ...prev, [name]: Number(e.target.value) }))}
               />
-              <span className="w-4 text-[10px] text-slate-500">g</span>
+              <span className="w-4 font-mono text-xs text-ink-muted">g</span>
             </div>
           </div>
         );
       })}
 
-      <div className="mt-2 rounded-xl border border-slate-800 bg-slate-950/60 p-3">
-        <p className="mb-2 text-[9px] font-bold uppercase tracking-wider text-slate-600">
+      <div className="border border-line bg-surface-low p-3">
+        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-ink-muted">
           Estimated macros with these portions
         </p>
         <MacroInline macros={estimate} />
       </div>
 
       <div className="flex gap-3 pt-2">
-        <Button variant="secondary" className="flex-1" onClick={onClose}>
+        <Button variant="outline" className="flex-1" onClick={onClose}>
           Cancel
         </Button>
-        <Button
-          className="flex-1"
-          icon={<Zap />}
-          loading={logging}
-          loadingText="Logging..."
-          onClick={() => onConfirm(grams)}
-        >
-          Log with These Portions
+        <Button className="flex-1" icon={<Zap />} loading={logging} loadingText="Logging..." onClick={() => onConfirm(grams)}>
+          Log portions
         </Button>
       </div>
     </Modal>

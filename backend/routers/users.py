@@ -31,6 +31,7 @@ async def get_user_profile(current_user: User = Depends(get_current_user)):
         **body_profile_dict(current_user),
         "current_streak": current_user.current_streak,
         "last_active_date": current_user.last_active_date.isoformat() if current_user.last_active_date else None,
+        "is_pro": current_user.is_pro,
     }
 
 
