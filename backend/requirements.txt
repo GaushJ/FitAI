@@ -18,5 +18,4 @@ asyncpg>=0.29.0
 psycopg2-binary>=2.9.0
 
 # Payments (one-time "pro" unlock via Razorpay) — embedded per routers/payments.py.
-# TODO: once pushed, replace with your actual paykit repo URL if different.
-paykit[fastapi,sql] @ git+https://github.com/GaushJ/paykit.git@main
+openpaykit[fastapi,sql] @ git+https://github.com/GaushJ/paykit.git@b534149cbb5f84108e96ec9dc5392d2b743e5561
